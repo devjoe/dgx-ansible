@@ -25,7 +25,7 @@ ollama_origins: "*"                    # CORS allowlist for POST /api/chat
 lan_cidr: "192.168.99.0/24"            # ufw scope for port 11434
 
 # --- Runtime ---
-ollama_keep_alive: "1h"                # how long after last request before unload
+ollama_keep_alive: "24h"               # how long after last request before unload
 ollama_num_parallel: 2                 # concurrent generation requests
 ollama_max_loaded_models: 2            # keep 2 models hot before evicting
 
