@@ -119,12 +119,12 @@
 
 - name: Append this run to benchmarks log
   ansible.builtin.copy:
-    dest: "{{ remote_workdir }}/benchmarks/{{ ansible_date_time.iso8601_basic_short }}.json"
+    dest: "{{ remote_workdir }}/benchmarks/{{ ansible_facts['date_time']['iso8601_basic_short'] }}.json"
     mode: "0644"
     content: "{{ bench_record | to_nice_json }}"
   vars:
     bench_record:
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ ansible_facts['date_time']['iso8601'] }}"
       model: "{{ bench_model }}"
       num_ctx: "{{ bench_num_ctx }}"
       runs: "{{ bench_runs }}"
