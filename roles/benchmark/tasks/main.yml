@@ -56,51 +56,26 @@
   register: bench_results
   loop: "{{ range(1, bench_runs + 1) | list }}"
 
-- name: Compute tok/s per run
-  ansible.builtin.set_fact:
-    tok_per_sec_list: >-
-      {{
-        bench_results.results
-          | map(attribute='json')
-          | map('community.general.dict_kv_fact', 'eval_count', 'eval_duration')
-          | list
-      }}
-  # The jinja above only works with community.general.dict_kv_fact which
-  # may not be installed. Fallback path below uses a plain loop.
-  when: false
-
-- name: Compute per-run tok/s (plain jinja)
-  ansible.builtin.set_fact:
-    runs_summary: >-
-      {{
-        bench_results.results
-        | map(attribute='json')
-        | map('combine', {'tok_per_sec_calc': 0})
-        | list
-      }}
-  # Overwritten below — kept as placeholder to document intent.
-  when: false
-
 - name: Build per-run tok/s summary
   ansible.builtin.set_fact:
     runs_summary: "{{ runs_summary | default([]) + [summary_entry] }}"
   vars:
     ec: "{{ item.json.eval_count | int }}"
     ed_ns: "{{ item.json.eval_duration | int }}"
-    ld_ms: "{{ (item.json.load_duration | int) // 1000000 }}"
-    pe_ms: "{{ (item.json.prompt_eval_duration | int) // 1000000 }}"
-    pec: "{{ item.json.prompt_eval_count | int }}"
     ed_s: "{{ (item.json.eval_duration | int) / 1000000000 }}"
     tps: "{{ (ec | float) / (ed_s | float) if (ed_s | float) > 0 else 0 }}"
     summary_entry:
-      run: "{{ loop.index }}"
-      load_ms: "{{ ld_ms }}"
-      prompt_ms: "{{ pe_ms }}"
-      prompt_tokens: "{{ pec }}"
-      eval_ms: "{{ (ed_ns | int) // 1000000 }}"
+      run: "{{ ansible_loop.index }}"
+      load_ms: "{{ (item.json.load_duration | int) // 1000000 }}"
+      prompt_ms: "{{ (item.json.prompt_eval_duration | int) // 1000000 }}"
+      prompt_tokens: "{{ item.json.prompt_eval_count | int }}"
+      eval_ms: "{{ ed_ns | int // 1000000 }}"
       eval_tokens: "{{ ec }}"
       tok_per_sec: "{{ '%.1f' | format(tps | float) }}"
   loop: "{{ bench_results.results }}"
+  loop_control:
+    extended: true   # exposes ansible_loop.index (1-based)
+    label: "run {{ ansible_loop.index }}"
 
 - name: Compute mean tok/s
   ansible.builtin.set_fact:
