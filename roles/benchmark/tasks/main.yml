@@ -6,7 +6,28 @@
 # Output ends with a debug block printing per-run + mean tok/s so the
 # operator can eyeball A/B deltas between flag settings.
 
-- name: Force-unload the benchmark model so num_ctx takes effect
+- name: List currently-loaded models
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/ps"
+    return_content: true
+  register: pre_unload
+
+- name: Force-unload every loaded model (so bench_model reloads with fresh num_ctx)
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/generate"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ item.name }}"
+      keep_alive: 0
+    status_code: [200, 404]
+  loop: "{{ pre_unload.json.models | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  # Also unload bench_model explicitly in case it wasn't in the loaded
+  # list (e.g. first-ever benchmark for this model).
+
+- name: Belt-and-braces unload of bench_model itself
   ansible.builtin.uri:
     url: "http://localhost:11434/api/generate"
     method: POST
@@ -14,9 +35,9 @@
     body:
       model: "{{ bench_model }}"
       keep_alive: 0
-    status_code: [200, 404]     # 404 if model was never loaded — fine
+    status_code: [200, 404]
 
-- name: Wait for model to fully unload (/api/ps shows empty)
+- name: Wait for all models to fully unload (/api/ps shows empty)
   ansible.builtin.uri:
     url: "http://localhost:11434/api/ps"
     return_content: true
