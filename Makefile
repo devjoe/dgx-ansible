@@ -1,5 +1,8 @@
 SHELL := /bin/bash
-ANSIBLE := ansible-playbook
+# Set ASK_BECOME=1 to prompt for sudo password interactively (for first
+# run before setting up NOPASSWD sudo). Example:
+#   ASK_BECOME=1 make deploy
+ANSIBLE := ansible-playbook $(if $(ASK_BECOME),--ask-become-pass,)
 
 .DEFAULT_GOAL := help
 
