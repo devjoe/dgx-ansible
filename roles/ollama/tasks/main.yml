@@ -1,0 +1,81 @@
+---
+# 1. Install Ollama if not already present.
+
+- name: Check if Ollama binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/ollama
+  register: ollama_bin
+
+- name: Install Ollama via official script
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://ollama.com/install.sh | sh
+  args:
+    executable: /bin/bash
+  when: not ollama_bin.stat.exists
+  changed_when: true
+
+# 2. Render the systemd override that carries our env vars.
+
+- name: Ensure ollama.service.d override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/ollama.service.d
+    state: directory
+    mode: "0755"
+
+- name: Render Ollama environment override
+  ansible.builtin.template:
+    src: ollama-override.conf.j2
+    dest: /etc/systemd/system/ollama.service.d/override.conf
+    mode: "0644"
+  notify: restart ollama
+
+# 3. Firewall — port 11434 from LAN only.
+
+- name: Allow Ollama port from LAN (ufw)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ lan_cidr }}"
+    port: "11434"
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined or
+        (ansible_facts.packages['ufw'] is defined)
+  ignore_errors: true
+
+# 4. Make sure service is up (before pulling models — `ollama pull` needs
+#    the daemon running).
+
+- name: Ensure Ollama is enabled and running
+  ansible.builtin.systemd:
+    name: ollama
+    enabled: true
+    state: started
+
+# 5. Flush any pending handlers so a config change is applied before we
+#    hit the API. Otherwise we'd query an old-env daemon.
+
+- name: Apply pending restarts before model pulls
+  ansible.builtin.meta: flush_handlers
+
+# 6. Pull models on the list that aren't already present.
+
+- name: Pull models
+  ansible.builtin.include_tasks: models.yml
+
+# 7. Final health check.
+
+- name: Health check — /api/tags responds 200
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/tags"
+    return_content: true
+  register: health_check
+  retries: 10
+  delay: 2
+  until: health_check.status == 200
+
+- name: Confirm every requested model is installed
+  ansible.builtin.assert:
+    that:
+      - item in (health_check.json.models | map(attribute='name') | list)
+    fail_msg: "Model {{ item }} not found in /api/tags after pull"
+  loop: "{{ ollama_models }}"

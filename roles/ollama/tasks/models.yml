@@ -1,0 +1,23 @@
+---
+# Query current state first, then only pull models that aren't present.
+# Avoids a multi-GB re-download on every run.
+
+- name: Query currently pulled models
+  ansible.builtin.uri:
+    url: http://localhost:11434/api/tags
+    return_content: true
+  register: tags_response
+
+- name: Compute installed-model set
+  ansible.builtin.set_fact:
+    installed_models: "{{ tags_response.json.models | map(attribute='name') | list }}"
+
+- name: Pull missing models
+  ansible.builtin.command: "ollama pull {{ item }}"
+  loop: "{{ ollama_models }}"
+  when: item not in installed_models
+  # ollama pull is long-running (multi-GB). Default Ansible command
+  # timeout is 10s — override via async/poll to keep the connection alive.
+  async: 1800
+  poll: 15
+  changed_when: true

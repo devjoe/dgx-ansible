@@ -1,0 +1,134 @@
+---
+# Benchmark: run the configured prompt N times against Ollama and
+# compute eval tok/s. Designed to be run AFTER `site.yml` has converged
+# the host — this role only makes HTTP calls, no systemd/become needed.
+#
+# Output ends with a debug block printing per-run + mean tok/s so the
+# operator can eyeball A/B deltas between flag settings.
+
+- name: Force-unload the benchmark model so num_ctx takes effect
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/generate"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ bench_model }}"
+      keep_alive: 0
+    status_code: [200, 404]     # 404 if model was never loaded — fine
+
+- name: Wait for model to fully unload (/api/ps shows empty)
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/ps"
+    return_content: true
+  register: ps_check
+  retries: 20
+  delay: 1
+  until: ps_check.json.models | default([]) | length == 0
+
+- name: Read effective env vars from rendered override
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/ollama.service.d/override.conf
+  register: override_slurp
+
+- name: Decode effective flag state
+  ansible.builtin.set_fact:
+    effective_override: "{{ override_slurp.content | b64decode }}"
+
+- name: Run benchmark prompt {{ bench_runs }} time(s)
+  ansible.builtin.uri:
+    url: "http://localhost:11434/api/chat"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ bench_model }}"
+      messages:
+        - role: system
+          content: "/no_think\n你是 Facebook 貼文分類專家。只輸出 JSON。"
+        - role: user
+          content: "{{ bench_prompt }}"
+      stream: false
+      think: false
+      options:
+        temperature: 0
+        num_predict: 200
+        num_ctx: "{{ bench_num_ctx }}"
+    return_content: true
+  register: bench_results
+  loop: "{{ range(1, bench_runs + 1) | list }}"
+
+- name: Compute tok/s per run
+  ansible.builtin.set_fact:
+    tok_per_sec_list: >-
+      {{
+        bench_results.results
+          | map(attribute='json')
+          | map('community.general.dict_kv_fact', 'eval_count', 'eval_duration')
+          | list
+      }}
+  # The jinja above only works with community.general.dict_kv_fact which
+  # may not be installed. Fallback path below uses a plain loop.
+  when: false
+
+- name: Compute per-run tok/s (plain jinja)
+  ansible.builtin.set_fact:
+    runs_summary: >-
+      {{
+        bench_results.results
+        | map(attribute='json')
+        | map('combine', {'tok_per_sec_calc': 0})
+        | list
+      }}
+  # Overwritten below — kept as placeholder to document intent.
+  when: false
+
+- name: Build per-run tok/s summary
+  ansible.builtin.set_fact:
+    runs_summary: "{{ runs_summary | default([]) + [summary_entry] }}"
+  vars:
+    ec: "{{ item.json.eval_count | int }}"
+    ed_ns: "{{ item.json.eval_duration | int }}"
+    ld_ms: "{{ (item.json.load_duration | int) // 1000000 }}"
+    pe_ms: "{{ (item.json.prompt_eval_duration | int) // 1000000 }}"
+    pec: "{{ item.json.prompt_eval_count | int }}"
+    ed_s: "{{ (item.json.eval_duration | int) / 1000000000 }}"
+    tps: "{{ (ec | float) / (ed_s | float) if (ed_s | float) > 0 else 0 }}"
+    summary_entry:
+      run: "{{ loop.index }}"
+      load_ms: "{{ ld_ms }}"
+      prompt_ms: "{{ pe_ms }}"
+      prompt_tokens: "{{ pec }}"
+      eval_ms: "{{ (ed_ns | int) // 1000000 }}"
+      eval_tokens: "{{ ec }}"
+      tok_per_sec: "{{ '%.1f' | format(tps | float) }}"
+  loop: "{{ bench_results.results }}"
+
+- name: Compute mean tok/s
+  ansible.builtin.set_fact:
+    mean_tok_per_sec: >-
+      {{
+        '%.1f' | format(
+          (runs_summary
+            | map(attribute='tok_per_sec')
+            | map('float')
+            | sum) / (runs_summary | length)
+        )
+      }}
+
+- name: Show benchmark result
+  ansible.builtin.debug:
+    msg: |
+      ================ DGX Spark Benchmark ================
+      Model        : {{ bench_model }}
+      num_ctx      : {{ bench_num_ctx }}
+      Runs         : {{ bench_runs }}
+
+      --- Effective override.conf ---
+      {{ effective_override }}
+      --- Per-run timings ---
+      {% for r in runs_summary %}
+      run {{ r.run }}: load {{ r.load_ms }}ms | prompt {{ r.prompt_ms }}ms / {{ r.prompt_tokens }}tok | eval {{ r.eval_ms }}ms / {{ r.eval_tokens }}tok | {{ r.tok_per_sec }} tok/s
+      {% endfor %}
+
+      --- Mean ---
+      eval throughput: {{ mean_tok_per_sec }} tok/s
+      =====================================================

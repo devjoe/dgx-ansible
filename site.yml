@@ -1,0 +1,11 @@
+---
+# Top-level playbook: converge the DGX Spark to the desired Ollama state.
+# Idempotent — safe to run repeatedly. A second consecutive run should
+# report `changed=0`.
+
+- name: Configure DGX Spark for Ollama hosting
+  hosts: dgx
+  become: true
+  gather_facts: true
+  roles:
+    - ollama

@@ -1,0 +1,18 @@
+{{ ansible_managed | comment }}
+# This file is rendered by Ansible from
+# dgx-ansible/roles/ollama/templates/ollama-override.conf.j2
+# Do not hand-edit — changes will be overwritten on the next
+# `ansible-playbook site.yml`.
+
+[Service]
+Environment="OLLAMA_HOST={{ ollama_host }}"
+Environment="OLLAMA_ORIGINS={{ ollama_origins }}"
+Environment="OLLAMA_KEEP_ALIVE={{ ollama_keep_alive }}"
+Environment="OLLAMA_NUM_PARALLEL={{ ollama_num_parallel }}"
+Environment="OLLAMA_MAX_LOADED_MODELS={{ ollama_max_loaded_models }}"
+{% if ollama_flash_attention %}
+Environment="OLLAMA_FLASH_ATTENTION=1"
+{% endif %}
+{% if ollama_kv_cache_type != "fp16" %}
+Environment="OLLAMA_KV_CACHE_TYPE={{ ollama_kv_cache_type }}"
+{% endif %}

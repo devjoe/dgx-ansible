@@ -1,0 +1,15 @@
+---
+# Handlers run only when a notifying task reports `changed`.
+# Keeping restart to one place means the service bounces at most
+# once per `ansible-playbook` run.
+
+- name: daemon-reload
+  ansible.builtin.systemd:
+    daemon_reload: true
+  listen: restart ollama
+
+- name: restart ollama
+  ansible.builtin.systemd:
+    name: ollama
+    state: restarted
+  listen: restart ollama

@@ -1,0 +1,11 @@
+*.retry
+*.log
+.vault_pass
+.vault_password
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local-only overrides
+inventory.local.ini
+group_vars/local.yml

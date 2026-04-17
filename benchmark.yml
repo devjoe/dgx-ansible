@@ -1,0 +1,12 @@
+---
+# Measured benchmark of the currently-configured Ollama. Run AFTER
+# `make deploy` has converged the host. Does not modify state —
+# only forces a model unload+reload to exercise fresh num_ctx, then
+# times N eval requests.
+
+- name: Benchmark Ollama on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  roles:
+    - benchmark

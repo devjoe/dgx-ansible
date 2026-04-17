@@ -1,0 +1,42 @@
+---
+# Single source of truth for DGX Spark state.
+#
+# Edit this file, run `make deploy`, and Ansible converges the box to
+# match. All speed/behaviour knobs live here — do NOT hand-edit
+# /etc/systemd/system/ollama.service.d/ on the DGX, that file is
+# rendered from `roles/ollama/templates/ollama-override.conf.j2`
+# and will be overwritten on the next deploy.
+
+# --- Network ---
+ollama_host: "0.0.0.0:11434"           # bind all interfaces (LAN reach)
+ollama_origins: "*"                    # CORS allowlist for POST /api/chat
+lan_cidr: "192.168.99.0/24"            # ufw scope for port 11434
+
+# --- Runtime ---
+ollama_keep_alive: "1h"                # how long after last request before unload
+ollama_num_parallel: 2                 # concurrent generation requests
+ollama_max_loaded_models: 2            # keep 2 models hot before evicting
+
+# --- Speed flags (DEFAULT OFF — set true to A/B benchmark) ---
+# Known regressions on GB10 / Qwen3 family; see:
+#   ollama/ollama#12432, #11949, #9683, #6769
+# Flip to true, run `make deploy && make benchmark`, compare to baseline.
+ollama_flash_attention: false
+ollama_kv_cache_type: "fp16"           # alt: "q8_0" or "q4_0"
+
+# --- Models (idempotent pull list) ---
+# Adding an entry here pulls it on next deploy. Removing does NOT delete
+# the on-disk weights — that's manual via `ollama rm <tag>` on the host.
+ollama_models:
+  - qwen3.5:latest                     # fb-reader baseline (9.7B dense, ~31 tok/s)
+  - qwen3.6:35b-a3b                    # MoE, 35B total / 3B active, ~24 GB
+  # - qwen3:32b                         # dense 32B, ~15 tok/s — uncomment if wanted
+  # - gemma3:27b                        # Google alternative family
+
+# --- Benchmark (used by benchmark.yml) ---
+bench_model: "qwen3.5:latest"
+bench_num_ctx: 4096
+bench_runs: 3
+bench_prompt: >-
+  分類這篇貼文：今天去爬山，風景很好，拍了很多照片，但下山時膝蓋有點痛。
+  回傳 JSON {commercial, political, emotional, personal}，每個 0.0-1.0 之間。
