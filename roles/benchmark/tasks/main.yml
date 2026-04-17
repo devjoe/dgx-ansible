@@ -132,3 +132,27 @@
       --- Mean ---
       eval throughput: {{ mean_tok_per_sec }} tok/s
       =====================================================
+
+# Persist the result as a timestamped JSON blob in the operator's
+# workdir so multiple benchmark runs accumulate for later A/B compare.
+
+- name: Ensure benchmarks dir exists
+  ansible.builtin.file:
+    path: "{{ remote_workdir }}/benchmarks"
+    state: directory
+    mode: "0755"
+
+- name: Append this run to benchmarks log
+  ansible.builtin.copy:
+    dest: "{{ remote_workdir }}/benchmarks/{{ ansible_date_time.iso8601_basic_short }}.json"
+    mode: "0644"
+    content: "{{ bench_record | to_nice_json }}"
+  vars:
+    bench_record:
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      model: "{{ bench_model }}"
+      num_ctx: "{{ bench_num_ctx }}"
+      runs: "{{ bench_runs }}"
+      effective_override: "{{ effective_override }}"
+      per_run: "{{ runs_summary }}"
+      mean_tok_per_sec: "{{ mean_tok_per_sec }}"

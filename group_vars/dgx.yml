@@ -7,6 +7,18 @@
 # rendered from `roles/ollama/templates/ollama-override.conf.j2`
 # and will be overwritten on the next deploy.
 
+# --- Remote workspace ---
+# Pre-existing dir on the DGX where the operator keeps Ollama-related
+# scripts and the uv Python env. Ansible treats this as the canonical
+# human-facing surface:
+#   {{ remote_workdir }}/override.conf.mirror   — readable copy of
+#                                                   the systemd override
+#   {{ remote_workdir }}/benchmarks/*.json      — results from `make benchmark`
+#   {{ remote_workdir }}/README.md              — points at this repo
+# Pre-existing files (.venv/, main.py, pyproject.toml, uv.lock, etc.)
+# are NOT touched.
+remote_workdir: "/home/devjoe/Projects/Ollama"
+
 # --- Network ---
 ollama_host: "0.0.0.0:11434"           # bind all interfaces (LAN reach)
 ollama_origins: "*"                    # CORS allowlist for POST /api/chat

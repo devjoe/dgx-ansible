@@ -66,7 +66,23 @@ dgx-ansible/
 3. Open UFW port `11434` from `lan_cidr`.
 4. Start/enable the `ollama` systemd unit; restart it if the override file changed.
 5. Pull any models listed in `ollama_models` that aren't already present (multi-GB, runs async with a 30-minute ceiling).
-6. Assert `GET /api/tags` returns 200 and contains every model we just pulled.
+6. Populate the operator workspace at `{{ remote_workdir }}` (default `/home/devjoe/Projects/Ollama`) with a readable mirror of the override, a README declaring this repo as the source of truth, and a `benchmarks/` directory.
+7. Assert `GET /api/tags` returns 200 and contains every model we just pulled.
+
+### Remote workspace (`~/Projects/Ollama` on the DGX)
+
+The DGX already has `~/Projects/Ollama/` containing a uv Python env, hand-written setup scripts, and notes. Ansible treats this as the canonical human-facing surface without clobbering existing files:
+
+```
+~/Projects/Ollama/
+├── main.py, pyproject.toml, uv.lock, .venv/   # left alone
+├── dgx-spark-ollama-setup.md                   # left alone
+├── setup-ollama-*.sh                           # left alone but DEPRECATED (see README.ansible.md)
+├── README.ansible.md                           # written by Ansible — source-of-truth declaration
+├── override.conf.mirror                        # readable copy of /etc/systemd/system/ollama.service.d/override.conf
+└── benchmarks/
+    └── 20260417T174500.json                    # each `make benchmark` appends one file
+```
 
 ## What the benchmark does
 

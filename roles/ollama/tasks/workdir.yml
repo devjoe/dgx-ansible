@@ -1,0 +1,72 @@
+---
+# Human-facing workspace on the DGX. Mirrors Ansible-managed artefacts
+# into a non-privileged location so the operator can inspect state
+# without sudo, and benchmark results accumulate somewhere durable.
+#
+# All tasks here run as the login user (become: false). Pre-existing
+# files in remote_workdir are never removed — we only add/update ours.
+
+- name: Ensure remote work directory exists
+  ansible.builtin.file:
+    path: "{{ remote_workdir }}"
+    state: directory
+    mode: "0755"
+  become: false
+
+- name: Ensure benchmark results subdirectory exists
+  ansible.builtin.file:
+    path: "{{ remote_workdir }}/benchmarks"
+    state: directory
+    mode: "0755"
+  become: false
+
+- name: Mirror systemd override to a readable (non-sudo) copy
+  ansible.builtin.template:
+    src: ollama-override.conf.j2
+    dest: "{{ remote_workdir }}/override.conf.mirror"
+    mode: "0644"
+  become: false
+
+- name: Drop a README declaring the source of truth
+  ansible.builtin.copy:
+    dest: "{{ remote_workdir }}/README.ansible.md"
+    mode: "0644"
+    content: |
+      # Ollama workspace (managed by Ansible)
+
+      State here is produced by the playbooks at
+      `github.com/devjoe/dgx-ansible`. Do **not** hand-edit:
+
+      - `/etc/systemd/system/ollama.service.d/override.conf` (the real file — systemd reads this)
+      - `{{ remote_workdir }}/override.conf.mirror` (human-readable copy of the above)
+      - `{{ remote_workdir }}/benchmarks/*.json` (appended by `make benchmark`)
+
+      ## Pre-existing files (NOT managed by Ansible)
+
+      These are left alone:
+      - `main.py`, `pyproject.toml`, `uv.lock`, `.venv/` — uv Python env
+      - `.claude/`, `.idea/` — tooling configs
+      - `dgx-spark-ollama-setup.md` — original manual setup notes
+
+      ## Deprecated shell scripts
+
+      The following scripts are now obsolete — Ansible supersedes them:
+
+      - `setup-ollama-systemd.sh` → replaced by `roles/ollama/tasks/main.yml` + template
+      - `setup-ollama-firewall.sh` → replaced by `community.general.ufw` task
+
+      They are NOT deleted by Ansible (so you can compare against git history
+      if something looks off), but running them after a deploy will overwrite
+      the Ansible-rendered override and cause drift. To retire them safely:
+
+          mv setup-ollama-*.sh .archive/  # or `git mv`, or just delete
+
+      ## Checking current state
+
+          cat override.conf.mirror              # what Ansible last rendered
+          sudo diff override.conf.mirror \\
+            /etc/systemd/system/ollama.service.d/override.conf
+                                                 # (should be identical)
+          curl -s http://localhost:11434/api/ps | jq .
+          ls benchmarks/ | tail
+  become: false

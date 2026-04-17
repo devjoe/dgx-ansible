@@ -62,7 +62,12 @@
 - name: Pull models
   ansible.builtin.include_tasks: models.yml
 
-# 7. Final health check.
+# 7. Mirror artefacts into the operator's working dir (~/Projects/Ollama).
+
+- name: Populate human-facing workspace
+  ansible.builtin.include_tasks: workdir.yml
+
+# 8. Final health check.
 
 - name: Health check — /api/tags responds 200
   ansible.builtin.uri:
