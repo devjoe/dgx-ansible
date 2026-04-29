@@ -1,24 +1,26 @@
 ---
-# Verify the vLLM Tier B daemon + image sanitizer are healthy and that
-# the previously-crashing FB CDN URL patterns now succeed. Read-only —
-# does not change host state.
+# Verify the vLLM Tier B daemon is healthy and accepts the data-URI
+# image format that fb-reader now sends. Read-only — does not change
+# host state.
 #
 # What this exercises:
-# 1. POST /v1/models — basic up-check.
-# 2. POST /v1/chat/completions with text only — confirms the model still
-#    answers and the proxy passes plain JSON through.
-# 3. POST /v1/chat/completions with a deliberately-broken `data:image/svg+xml,...`
-#    URI — the OLD failure mode. Sanitizer should drop the bad image
-#    (X-Sanitized-Dropped: 1) and the model should still produce a
-#    successful text response. Pre-fix this returned 400 with
-#    "not enough values to unpack".
+# 1. GET /v1/models — basic up-check.
+# 2. POST /v1/chat/completions with text only — confirms the model
+#    still answers.
+# 3. POST /v1/chat/completions with a tiny JPEG data URI — confirms
+#    vLLM accepts the `data:image/jpeg;base64,...` format that
+#    fb-reader's content-script prefetch produces. Pre-prefetch
+#    fb-reader sent raw FB CDN URLs which would 403 on this DGX.
 
 - name: Benchmark + sanity-check vLLM Tier B
   hosts: dgx
   become: false
   gather_facts: false
   vars:
-    base_url: "http://localhost:{{ vllm_public_port }}"
+    base_url: "http://localhost:{{ vllm_port }}"
+    # 1×1 white JPEG — the smallest valid JPEG that PIL can decode.
+    # Used to verify vLLM accepts data-URI images without crashing.
+    sample_data_uri: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAr/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AL+AB//Z"
   tasks:
     - name: GET /v1/models
       ansible.builtin.uri:
@@ -49,7 +51,7 @@
       ansible.builtin.debug:
         msg: "{{ text_resp.json.choices[0].message.content }}"
 
-    - name: Synthetic-bad-image regression check
+    - name: Data-URI image regression check
       ansible.builtin.uri:
         url: "{{ base_url }}/v1/chat/completions"
         method: POST
@@ -63,21 +65,20 @@
                   text: "Reply with exactly the word 'ok'."
                 - type: image_url
                   image_url:
-                    url: "data:image/svg+xml,%3Csvg/%3E"
+                    url: "{{ sample_data_uri }}"
           max_tokens: 16
           temperature: 0
         return_content: true
         status_code: 200
-      register: bad_image_resp
+      register: data_uri_resp
 
-    - name: Verify sanitizer dropped the SVG and the request still succeeded
+    - name: Verify vLLM accepted the data URI and produced a response
       ansible.builtin.assert:
         that:
-          - bad_image_resp.status == 200
-          - (bad_image_resp.x_sanitized_dropped | default('0') | int) >= 1
-          - "'ok' in (bad_image_resp.json.choices[0].message.content | lower)"
+          - data_uri_resp.status == 200
+          - data_uri_resp.json.choices[0].message.content is defined
+          - data_uri_resp.json.choices[0].message.content | length > 0
         fail_msg: >-
-          Sanitizer regression: status={{ bad_image_resp.status }}
-          dropped={{ bad_image_resp.x_sanitized_dropped | default('-') }}
-          body={{ bad_image_resp.content | default('') | truncate(200) }}
-        success_msg: "Sanitizer dropped the bad image and the model responded successfully."
+          vLLM data-URI regression: status={{ data_uri_resp.status }}
+          body={{ data_uri_resp.content | default('') | truncate(200) }}
+        success_msg: "vLLM decoded the JPEG data URI and produced a response."

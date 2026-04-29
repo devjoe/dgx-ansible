@@ -54,20 +54,20 @@ bench_prompt: >-
   回傳 JSON {commercial, political, emotional, personal}，每個 0.0-1.0 之間。
 
 # --- vLLM Tier B daemon -----------------------------------------------
-# vLLM serves the multimodal Tier B classifier for fb-reader. The
-# image-sanitizing reverse proxy on `vllm_public_port` re-encodes images
-# via Pillow before they reach vLLM, so FB CDN URLs whose bytes Pillow's
-# default loader rejects (animated WebP, signed-token 403 HTML, SVG
-# placeholders) get sanitized or silently dropped instead of crashing
-# the whole request. fb-reader continues to point at
-# `http://gx10.local:8000/v1/chat/completions`.
+# vLLM serves the multimodal Tier B classifier for fb-reader. Image
+# normalization (fetch FB CDN URLs against the user's authenticated
+# session, re-encode SVG / animated frames / oversized photos to JPEG)
+# happens client-side in the fb-reader content script — see
+# `openspec/changes/2026-04-29-client-side-image-prefetch/` in
+# fb-reader. vLLM receives `data:image/jpeg;base64,...` URIs that
+# PIL decodes trivially, so no server-side sanitizer proxy is needed.
+# fb-reader points at `http://gx10.local:{{ vllm_port }}/v1/chat/completions`.
 vllm_user: "devjoe"
 vllm_workdir: "/home/devjoe/Projects/vllm"
 
-# Network: sanitizer is public, vLLM itself is localhost-only.
-vllm_public_host: "0.0.0.0"
-vllm_public_port: 8000
-vllm_internal_port: 8001
+# Network: vLLM listens directly on the LAN port.
+vllm_host: "0.0.0.0"
+vllm_port: 8000
 
 # Model + serving knobs.
 vllm_model: "Qwen/Qwen3.6-35B-A3B-AWQ"
@@ -76,16 +76,9 @@ vllm_max_model_len: 16384
 vllm_gpu_memory_utilization: "0.85"
 vllm_max_images_per_prompt: 4
 
-# Floor versions — bumped to pull in Pillow / transformers fixes for FB-
-# style CDN image edge cases. `state: latest` in the role respects these
-# as minimums; bump them here when you want to A/B a newer release.
+# Floor versions — bump deliberately when A/B testing a newer release.
+# Even with client-side re-encode, recent Pillow / transformers ship
+# defensive fixes worth keeping the floor on.
 vllm_version_floor: "0.7.0"
 vllm_transformers_floor: "4.46.0"
 vllm_pillow_floor: "11.0.0"
-
-# Sanitizer tuning. The defaults are conservative — re-encoding at q85
-# keeps text legible in screenshots while keeping the data URI under
-# vLLM's image-token budget.
-vllm_sanitizer_fetch_timeout: "8.0"
-vllm_sanitizer_jpeg_quality: 85
-vllm_sanitizer_max_edge: 1280

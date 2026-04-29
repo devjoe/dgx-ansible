@@ -4,9 +4,3 @@
     name: vllm
     state: restarted
     daemon_reload: true
-
-- name: restart vllm-sanitizer
-  ansible.builtin.systemd:
-    name: vllm-sanitizer
-    state: restarted
-    daemon_reload: true
