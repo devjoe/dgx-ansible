@@ -1,8 +1,17 @@
 # dgx-ansible
 
-Declarative management of the NVIDIA DGX Spark (`gx10.local` / `192.168.99.2`) running Ollama for the [fb-reader](https://github.com/devjoe/fb-reader) Chrome extension.
+Declarative management of the NVIDIA DGX Spark (`gx10.local` / `192.168.99.2`) running Ollama (Tier A) and vLLM (Tier B) for the [fb-reader](https://github.com/devjoe/fb-reader) Chrome extension.
 
-All host state — systemd env vars, firewall rules, model list — lives in `group_vars/dgx.yml`. Run `make deploy` to converge the host. Run `make benchmark` to measure `tok/s` against the current configuration.
+All host state — systemd env vars, firewall rules, model list, vLLM serving knobs — lives in `group_vars/dgx.yml`. Run `make deploy` to converge the host. Run `make benchmark` to measure Ollama `tok/s`. Run `make benchmark-vllm` to sanity-check vLLM + the image-sanitizing proxy.
+
+## Tier B (vLLM) image-sanitizing proxy
+
+The `vllm` role deploys two systemd services:
+
+- `vllm` — vLLM serving `qwen3.6:35b-a3b` (MoE-AWQ-4bit) bound to `127.0.0.1:8001`.
+- `vllm-sanitizer` — a small FastAPI reverse proxy on `0.0.0.0:8000` that re-encodes inbound images via Pillow before forwarding to vLLM. Anything Pillow can't decode (animated WebP, signed-token 403 HTML bodies, SVG data URIs) is silently dropped from the request so vLLM never crashes on `image.size` unpacking. fb-reader keeps pointing at `http://gx10.local:8000/v1/chat/completions` — the only observable change is "image-decode crashes go away".
+
+The proxy adds `X-Sanitized-Kept` and `X-Sanitized-Dropped` response headers so the client can tell how many images survived. Tunables live under `vllm_sanitizer_*` in `group_vars/dgx.yml`.
 
 ## Prerequisites
 

@@ -1,0 +1,90 @@
+---
+# Manage the vLLM Tier B daemon for fb-reader.
+#
+# vLLM serves the multimodal Tier B classifier directly on the LAN port.
+# Image normalization (re-encode SVG / animated frames / oversized
+# photos to JPEG, fetch FB CDN URLs against the user's authenticated
+# session) happens client-side in the fb-reader content script — see
+# `openspec/changes/2026-04-29-client-side-image-prefetch/` in
+# fb-reader. vLLM receives `data:image/jpeg;base64,...` URIs that PIL
+# decodes trivially, so no server-side sanitizer proxy is needed.
+
+- name: Ensure vLLM workdir exists
+  ansible.builtin.file:
+    path: "{{ vllm_workdir }}"
+    state: directory
+    owner: "{{ vllm_user }}"
+    group: "{{ vllm_user }}"
+    mode: "0755"
+
+- name: Ensure Python + venv prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - python3-pip
+    state: present
+    update_cache: true
+
+- name: Create vLLM venv if missing
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ vllm_workdir }}/.venv"
+    creates: "{{ vllm_workdir }}/.venv/bin/python"
+  become_user: "{{ vllm_user }}"
+
+- name: Pin pip
+  ansible.builtin.command:
+    cmd: "{{ vllm_workdir }}/.venv/bin/pip install --upgrade pip"
+  changed_when: false
+  become_user: "{{ vllm_user }}"
+
+# Pin floor versions so we can bump deliberately. Newer Pillow ships
+# fixes for several edge cases (truncated WebP, multi-frame APNG)
+# that occasionally surface even after client-side re-encode if a
+# data URI is somehow malformed.
+- name: Install / upgrade vLLM, transformers, Pillow
+  ansible.builtin.pip:
+    name:
+      - "vllm>={{ vllm_version_floor }}"
+      - "transformers>={{ vllm_transformers_floor }}"
+      - "Pillow>={{ vllm_pillow_floor }}"
+    virtualenv: "{{ vllm_workdir }}/.venv"
+    state: latest
+    extra_args: "--upgrade-strategy eager"
+  become_user: "{{ vllm_user }}"
+  notify: restart vllm
+
+- name: Render vllm.service
+  ansible.builtin.template:
+    src: vllm.service.j2
+    dest: /etc/systemd/system/vllm.service
+    mode: "0644"
+  notify: restart vllm
+
+- name: Open firewall for vLLM port (LAN only)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ lan_cidr }}"
+    port: "{{ vllm_port }}"
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined or
+        (ansible_facts.packages['ufw'] is defined)
+  ignore_errors: true
+
+- name: Enable + start vllm
+  ansible.builtin.systemd:
+    name: vllm
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Health check — vLLM /v1/models responds 200
+  ansible.builtin.uri:
+    url: "http://localhost:{{ vllm_port }}/v1/models"
+    return_content: true
+  register: vllm_health
+  retries: 30
+  delay: 5
+  until: vllm_health.status == 200

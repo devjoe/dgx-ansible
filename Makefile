@@ -6,7 +6,7 @@ ANSIBLE := ansible-playbook $(if $(ASK_BECOME),--ask-become-pass,)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping deploy benchmark status unload models.yml lint install-deps
+.PHONY: help ping deploy benchmark benchmark-vllm status status-vllm unload models.yml lint install-deps
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -23,10 +23,18 @@ deploy:  ## Converge DGX to group_vars state (idempotent)
 benchmark:  ## Unload, warm, run N timed eval calls → tok/s
 	$(ANSIBLE) benchmark.yml
 
+benchmark-vllm:  ## Sanity-check vLLM Tier B + image sanitizer
+	$(ANSIBLE) benchmark-vllm.yml
+
 status:  ## Show what Ollama currently has loaded
 	@ansible dgx -m ansible.builtin.uri \
 		-a "url=http://localhost:11434/api/ps return_content=yes" \
 		--one-line | sed 's/.*"content": //' | sed 's/}}}$$/}}/' | python3 -m json.tool
+
+status-vllm:  ## Show vLLM service state + sanitizer health
+	@ansible dgx -m ansible.builtin.shell \
+		-a "systemctl is-active vllm vllm-sanitizer; curl -s http://localhost:8000/v1/models | head -c 200" \
+		--one-line
 
 unload:  ## Force-unload the benchmark model (reclaim VRAM)
 	@ansible dgx -m ansible.builtin.uri \
@@ -35,3 +43,4 @@ unload:  ## Force-unload the benchmark model (reclaim VRAM)
 lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) site.yml --syntax-check
 	$(ANSIBLE) benchmark.yml --syntax-check
+	$(ANSIBLE) benchmark-vllm.yml --syntax-check
