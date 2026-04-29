@@ -1,0 +1,83 @@
+---
+# Verify the vLLM Tier B daemon + image sanitizer are healthy and that
+# the previously-crashing FB CDN URL patterns now succeed. Read-only —
+# does not change host state.
+#
+# What this exercises:
+# 1. POST /v1/models — basic up-check.
+# 2. POST /v1/chat/completions with text only — confirms the model still
+#    answers and the proxy passes plain JSON through.
+# 3. POST /v1/chat/completions with a deliberately-broken `data:image/svg+xml,...`
+#    URI — the OLD failure mode. Sanitizer should drop the bad image
+#    (X-Sanitized-Dropped: 1) and the model should still produce a
+#    successful text response. Pre-fix this returned 400 with
+#    "not enough values to unpack".
+
+- name: Benchmark + sanity-check vLLM Tier B
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    base_url: "http://localhost:{{ vllm_public_port }}"
+  tasks:
+    - name: GET /v1/models
+      ansible.builtin.uri:
+        url: "{{ base_url }}/v1/models"
+        return_content: true
+      register: models_resp
+
+    - name: Show served model
+      ansible.builtin.debug:
+        msg: "vLLM serves: {{ models_resp.json.data | map(attribute='id') | list }}"
+
+    - name: Text-only chat completion (no images)
+      ansible.builtin.uri:
+        url: "{{ base_url }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ vllm_served_name }}"
+          messages:
+            - role: user
+              content: "Reply with exactly the word 'ok'."
+          max_tokens: 16
+          temperature: 0
+        return_content: true
+      register: text_resp
+
+    - name: Show text-only response
+      ansible.builtin.debug:
+        msg: "{{ text_resp.json.choices[0].message.content }}"
+
+    - name: Synthetic-bad-image regression check
+      ansible.builtin.uri:
+        url: "{{ base_url }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ vllm_served_name }}"
+          messages:
+            - role: user
+              content:
+                - type: text
+                  text: "Reply with exactly the word 'ok'."
+                - type: image_url
+                  image_url:
+                    url: "data:image/svg+xml,%3Csvg/%3E"
+          max_tokens: 16
+          temperature: 0
+        return_content: true
+        status_code: 200
+      register: bad_image_resp
+
+    - name: Verify sanitizer dropped the SVG and the request still succeeded
+      ansible.builtin.assert:
+        that:
+          - bad_image_resp.status == 200
+          - (bad_image_resp.x_sanitized_dropped | default('0') | int) >= 1
+          - "'ok' in (bad_image_resp.json.choices[0].message.content | lower)"
+        fail_msg: >-
+          Sanitizer regression: status={{ bad_image_resp.status }}
+          dropped={{ bad_image_resp.x_sanitized_dropped | default('-') }}
+          body={{ bad_image_resp.content | default('') | truncate(200) }}
+        success_msg: "Sanitizer dropped the bad image and the model responded successfully."

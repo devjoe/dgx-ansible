@@ -1,0 +1,118 @@
+---
+# Manage the vLLM Tier B daemon and the image-sanitizing reverse proxy
+# that fronts it. The proxy is the load-bearing fix for the FB CDN
+# image-decode crash — it re-encodes images via Pillow (with
+# LOAD_TRUNCATED_IMAGES + RGB conversion + frame-0 selection) before
+# vLLM sees them, and silently drops anything that fails to decode so
+# the request still succeeds with the surviving images + text.
+#
+# The vLLM process is bound to 127.0.0.1; only the sanitizer is exposed
+# on the LAN port. fb-reader keeps pointing at gx10.local:8000 — the
+# only thing it sees changing is "image-decode crashes go away".
+
+- name: Ensure vLLM workdir exists
+  ansible.builtin.file:
+    path: "{{ vllm_workdir }}"
+    state: directory
+    owner: "{{ vllm_user }}"
+    group: "{{ vllm_user }}"
+    mode: "0755"
+
+- name: Ensure Python + venv prerequisites are installed
+  ansible.builtin.apt:
+    name:
+      - python3-venv
+      - python3-pip
+    state: present
+    update_cache: true
+
+- name: Create vLLM venv if missing
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ vllm_workdir }}/.venv"
+    creates: "{{ vllm_workdir }}/.venv/bin/python"
+  become_user: "{{ vllm_user }}"
+
+- name: Pin pip
+  ansible.builtin.command:
+    cmd: "{{ vllm_workdir }}/.venv/bin/pip install --upgrade pip"
+  changed_when: false
+  become_user: "{{ vllm_user }}"
+
+# Newer Pillow ships fixes for several FB-style CDN image edge cases
+# (truncated WebP, multi-frame APNG). Pinning a floor lets us bump
+# without tearing down the venv.
+- name: Install / upgrade vLLM, transformers, Pillow
+  ansible.builtin.pip:
+    name:
+      - "vllm>={{ vllm_version_floor }}"
+      - "transformers>={{ vllm_transformers_floor }}"
+      - "Pillow>={{ vllm_pillow_floor }}"
+      - "fastapi>=0.115"
+      - "uvicorn[standard]>=0.32"
+      - "httpx>=0.27"
+    virtualenv: "{{ vllm_workdir }}/.venv"
+    state: latest
+    extra_args: "--upgrade-strategy eager"
+  become_user: "{{ vllm_user }}"
+  notify:
+    - restart vllm
+    - restart vllm-sanitizer
+
+- name: Install image sanitizer script
+  ansible.builtin.copy:
+    src: image_sanitizer.py
+    dest: "{{ vllm_workdir }}/image_sanitizer.py"
+    owner: "{{ vllm_user }}"
+    group: "{{ vllm_user }}"
+    mode: "0755"
+  notify: restart vllm-sanitizer
+
+- name: Render vllm.service
+  ansible.builtin.template:
+    src: vllm.service.j2
+    dest: /etc/systemd/system/vllm.service
+    mode: "0644"
+  notify: restart vllm
+
+- name: Render vllm-sanitizer.service
+  ansible.builtin.template:
+    src: vllm-sanitizer.service.j2
+    dest: /etc/systemd/system/vllm-sanitizer.service
+    mode: "0644"
+  notify: restart vllm-sanitizer
+
+- name: Open firewall for sanitizer port (LAN only)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ lan_cidr }}"
+    port: "{{ vllm_public_port }}"
+    proto: tcp
+  when: ansible_facts.services['ufw.service'] is defined or
+        (ansible_facts.packages['ufw'] is defined)
+  ignore_errors: true
+
+- name: Enable + start vllm
+  ansible.builtin.systemd:
+    name: vllm
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable + start vllm-sanitizer
+  ansible.builtin.systemd:
+    name: vllm-sanitizer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before health check
+  ansible.builtin.meta: flush_handlers
+
+- name: Health check — sanitizer /v1/models responds 200
+  ansible.builtin.uri:
+    url: "http://localhost:{{ vllm_public_port }}/v1/models"
+    return_content: true
+  register: vllm_health
+  retries: 30
+  delay: 5
+  until: vllm_health.status == 200

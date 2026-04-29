@@ -1,0 +1,32 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/vllm/templates/vllm.service.j2.
+# Do not hand-edit — `make deploy` overwrites this file.
+
+[Unit]
+Description=vLLM Tier B daemon (qwen3.6:35b-a3b MoE-AWQ-4bit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ vllm_user }}
+Group={{ vllm_user }}
+WorkingDirectory={{ vllm_workdir }}
+Environment="HF_HUB_ENABLE_HF_TRANSFER=1"
+Environment="VLLM_LOGGING_LEVEL=INFO"
+# Bind to localhost only — the sanitizer proxy is the public face.
+ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
+    --host 127.0.0.1 \
+    --port {{ vllm_internal_port }} \
+    --served-model-name {{ vllm_served_name }} \
+    --max-model-len {{ vllm_max_model_len }} \
+    --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} \
+    --quantization awq_marlin \
+    --trust-remote-code \
+    --limit-mm-per-prompt 'image={{ vllm_max_images_per_prompt }}'
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
