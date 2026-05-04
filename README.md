@@ -45,8 +45,8 @@ service bound directly on `0.0.0.0:8000`.
 ### Observability (v1 shipped 2026-05-04 — collecting baseline)
 
 `roles/observability/` ships VictoriaMetrics + Grafana + DCGM exporter
-+ node_exporter + frcooper/ollama-exporter + vmagent + vLLM scrape +
-canary systemd timer. Stand it up with:
++ node_exporter + vmagent + vLLM scrape + canary systemd timer. Stand
+it up with:
 
 ```bash
 cp group_vars/dgx.yml.vault.example group_vars/dgx.yml.vault

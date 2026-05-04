@@ -1,23 +1,33 @@
 ---
-# Pull dashboard JSON + alert YAML from local-inference at deploy time.
-# Cross-repo dependency resolution: domain knowledge (dashboards
-# describing inference) lives in local-inference; provisioning lives
-# here in dgx-ansible.
+# Sync dashboard JSON from the controller's local-inference checkout
+# straight to the DGX Grafana provisioning dir. Cross-repo dependency
+# resolution: domain knowledge (dashboards describing inference) lives
+# in local-inference; provisioning lives here in dgx-ansible.
+#
+# Was originally a `git clone` on the target — replaced with controller
+# rsync because local-inference is a private repo and the DGX has no
+# GitHub credentials. Side benefit: changes to dashboards in the Mac
+# checkout flow to Grafana on the next `make deploy-obs` without needing
+# a push first.
 
-- name: Clone or update local-inference repo for dashboards
-  ansible.builtin.git:
-    repo: "{{ obs_dashboards_repo_url }}"
-    dest: "{{ obs_repo_dir }}"
-    version: "{{ obs_dashboards_repo_branch }}"
-    force: true
-    update: true
-  register: obs_repo_pull
+- name: Verify local dashboard source exists on the controller
+  ansible.builtin.stat:
+    path: "{{ obs_dashboards_local_src }}"
+  register: obs_dashboards_src_stat
+  delegate_to: localhost
+  become: false
 
-- name: Sync dashboards into Grafana provisioning dir
-  ansible.builtin.synchronize:
-    src: "{{ obs_repo_dir }}/{{ obs_dashboards_repo_subpath }}/"
+- name: Fail clearly if dashboards source is missing
+  ansible.builtin.fail:
+    msg: >-
+      Dashboards source {{ obs_dashboards_local_src }} not found on the
+      Ansible controller. Override obs_dashboards_local_src in
+      group_vars/dgx.yml if your local-inference checkout lives elsewhere.
+  when: not obs_dashboards_src_stat.stat.exists
+
+- name: Sync dashboards into Grafana provisioning dir on DGX
+  ansible.posix.synchronize:
+    src: "{{ obs_dashboards_local_src }}"
     dest: "{{ obs_grafana_dashboards_dir }}/"
     delete: true
     recursive: true
-  delegate_to: "{{ inventory_hostname }}"
-  when: obs_repo_pull is succeeded

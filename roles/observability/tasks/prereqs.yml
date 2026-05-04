@@ -1,13 +1,26 @@
 ---
 # Common dependencies for the observability stack.
 
-- name: Ensure docker.io + git are installed
+- name: Ensure git is installed
   ansible.builtin.apt:
-    name:
-      - docker.io
-      - git
+    name: git
     state: present
     update_cache: true
+
+# DGX Spark vendor OS ships docker-ce + containerd.io. Installing
+# docker.io there triggers an apt conflict (containerd vs containerd.io).
+# Only install docker.io on hosts where no docker binary exists yet.
+- name: Probe for an existing docker binary
+  ansible.builtin.command: which docker
+  register: obs_docker_present
+  changed_when: false
+  failed_when: false
+
+- name: Ensure docker.io is installed (only if no docker present)
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+  when: obs_docker_present.rc != 0
 
 - name: Ensure docker is enabled + running
   ansible.builtin.systemd:
@@ -50,6 +63,7 @@
     - "{{ obs_grafana_provisioning_dir }}/datasources"
     - "{{ obs_grafana_provisioning_dir }}/dashboards"
     - "{{ obs_grafana_dashboards_dir }}"
+    - "{{ obs_canary_remote_dir }}"
     - "{{ obs_textfile_dir }}"
 
 # Grafana container runs as uid 472 by default.
@@ -60,6 +74,21 @@
     owner: "472"
     group: "472"
     mode: "0755"
+
+# Canary unit runs as obs_canary_user (vllm_user). Without this it can't
+# write the textfile that node_exporter scrapes. Mode 0755 matches the
+# default the directory creation task sets, so this task converges to
+# changed=0 on subsequent runs.
+- name: Ensure canary-writable dirs are owned by canary user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ obs_canary_user }}"
+    group: "{{ obs_canary_user }}"
+    mode: "0755"
+  loop:
+    - "{{ obs_canary_remote_dir }}"
+    - "{{ obs_textfile_dir }}"
 
 - name: Open observability ports from LAN (ufw)
   community.general.ufw:
@@ -73,7 +102,6 @@
     - "{{ obs_dcgm_port }}"
     - "{{ obs_node_exporter_port }}"
     - "{{ obs_vmagent_port }}"
-    - "{{ obs_ollama_exporter_port }}"
   when: ansible_facts.services['ufw.service'] is defined or
         (ansible_facts.packages['ufw'] is defined)
   ignore_errors: true

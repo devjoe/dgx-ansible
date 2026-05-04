@@ -15,7 +15,7 @@ User={{ obs_canary_user }}
 Group={{ obs_canary_user }}
 WorkingDirectory={{ obs_canary_workdir }}
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/npx tsx {{ obs_canary_workdir }}/scripts/canary/run.ts \
+ExecStart=/usr/bin/npx tsx {{ obs_canary_workdir }}/run.ts \
     --host dgx-spark \
     --textfile-out {{ obs_textfile_dir }}/inference_canary.prom
 TimeoutStartSec=600

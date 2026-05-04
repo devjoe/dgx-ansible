@@ -4,7 +4,7 @@
 # --- Versions / images ---------------------------------------------------
 obs_victoriametrics_image: "victoriametrics/victoria-metrics:v1.115.0"
 obs_grafana_image: "grafana/grafana:11.4.0"
-obs_dcgm_exporter_image: "nvcr.io/nvidia/k8s/dcgm-exporter:4.0.0-4.0.0-ubuntu22.04"
+obs_dcgm_exporter_image: "nvcr.io/nvidia/k8s/dcgm-exporter:4.5.2-4.8.1-ubuntu22.04"
 obs_node_exporter_image: "quay.io/prometheus/node-exporter:v1.8.2"
 obs_vmagent_image: "victoriametrics/vmagent:v1.115.0"
 
@@ -16,7 +16,6 @@ obs_grafana_port: 3000
 obs_dcgm_port: 9400
 obs_node_exporter_port: 9100
 obs_vmagent_port: 8429
-obs_ollama_exporter_port: 9778
 # vLLM exposes /metrics natively on its main port (8000) — no separate
 # exporter port. Recorded here for vmagent scrape config readability.
 obs_vllm_metrics_port: "{{ vllm_port }}"
@@ -27,7 +26,7 @@ obs_vm_data_dir: "{{ obs_data_root }}/vm-data"
 obs_grafana_data_dir: "{{ obs_data_root }}/grafana-data"
 obs_grafana_provisioning_dir: "{{ obs_data_root }}/grafana-provisioning"
 obs_grafana_dashboards_dir: "{{ obs_data_root }}/grafana-dashboards"
-obs_repo_dir: "{{ obs_data_root }}/local-inference"
+obs_canary_remote_dir: "{{ obs_data_root }}/canary"
 obs_textfile_dir: "{{ obs_data_root }}/textfile"
 
 # --- TSDB retention ------------------------------------------------------
@@ -35,22 +34,18 @@ obs_textfile_dir: "{{ obs_data_root }}/textfile"
 # seasonal baselines. ~1 GB per 90d at this scrape rate.
 obs_vm_retention: "90d"
 
-# --- frcooper/ollama-exporter --------------------------------------------
-# No upstream Docker image; build via golang on the host and run as a
-# systemd-managed binary. obs_ollama_exporter_install_method:
-#   "go" → apt-get install golang-go + go install
-#   "skip" → don't install (canary alone for ollama signal)
-obs_ollama_exporter_install_method: "go"
-obs_ollama_exporter_repo: "github.com/frcooper/ollama-exporter@latest"
-
 # --- Canary --------------------------------------------------------------
-# Canary on the DGX runs the same TS suite as on the Mac. It uses
-# `npx tsx` so node + npm must be available. obs_canary_node_install:
+# Canary on the DGX runs the same TS suite as on the Mac. The canary
+# scripts are rsynced from the controller's local-inference checkout to
+# obs_canary_remote_dir at deploy time (same pattern as dashboards) —
+# we don't clone on the DGX because local-inference is private.
+# obs_canary_node_install:
 #   "apt"  → apt install nodejs npm (default)
 #   "skip" → assume node is already installed
 obs_canary_node_install: "apt"
 obs_canary_user: "{{ vllm_user }}"
-obs_canary_workdir: "{{ obs_repo_dir }}"
+obs_canary_local_src: "{{ lookup('env', 'HOME') }}/Projects/local-inference/scripts/canary/"
+obs_canary_workdir: "{{ obs_canary_remote_dir }}"
 # Daily 03:00 to match Mac canary; staggered by Mac-vs-DGX clock skew is
 # acceptable since they're independent regression tests.
 obs_canary_oncalendar: "*-*-* 03:00:00"
@@ -63,10 +58,12 @@ obs_grafana_anon_org_role: "Viewer"
 # obs_grafana_admin_password is loaded from group_vars/dgx.yml.vault as
 # vault_grafana_admin_password (see deploy-observability.yml playbook).
 
-# --- Dashboard pull ------------------------------------------------------
-obs_dashboards_repo_url: "https://github.com/devjoe/local-inference.git"
-obs_dashboards_repo_branch: "main"
-obs_dashboards_repo_subpath: "obs/dashboards"
+# --- Dashboard source ----------------------------------------------------
+# Dashboards are owned by the local-inference repo (domain knowledge).
+# We rsync them straight from the Ansible controller's working copy
+# instead of cloning on the target — local-inference is private and the
+# DGX has no GitHub credentials. Override if your checkout lives elsewhere.
+obs_dashboards_local_src: "{{ lookup('env', 'HOME') }}/Projects/local-inference/obs/dashboards/"
 
 # --- Mac peer (the canary running on the Mac writes textfile that
 #     node_exporter on the Mac scrapes; we list mac here only so the

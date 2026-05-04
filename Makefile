@@ -59,7 +59,7 @@ deploy-obs:  ## Stand up VM + Grafana + exporters + canary timer on the DGX
 
 status-obs:  ## Show systemd state of every observability unit on the DGX
 	@ansible dgx -m ansible.builtin.shell \
-		-a "systemctl is-active observability-victoriametrics observability-grafana observability-dcgm-exporter observability-node-exporter observability-ollama-exporter observability-vmagent observability-canary.timer" \
+		-a "systemctl is-active observability-victoriametrics observability-grafana observability-dcgm-exporter observability-node-exporter observability-vmagent observability-canary.timer" \
 		--one-line
 
 canary-once:  ## Trigger the DGX canary timer's underlying service immediately

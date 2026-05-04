@@ -2,8 +2,13 @@
 # DGX-side observability stack. Idempotent — re-run safe.
 #
 # Stack: VictoriaMetrics single-node + Grafana + DCGM exporter
-# + node_exporter + frcooper/ollama-exporter + vmagent (local scrape)
-# + canary systemd timer + vLLM /metrics scrape config.
+# + node_exporter + vmagent (local scrape) + canary systemd timer
+# + vLLM /metrics scrape config.
+#
+# v1 deviation: frcooper/ollama-exporter dropped — upstream is an inline
+# FastAPI proxy on the request path, not the side-car /api/ps poller the
+# design assumed. Canary supplies the regression signal; live "warm models
+# / RAM per model" panels are deferred to v2.
 #
 # Design: ~/Projects/local-inference/docs/observability-design-2026-05.md.
 # v1 ships data path with no alerts; v2 wires Telegram alerts after
@@ -20,10 +25,6 @@
 
 - name: node_exporter (host metrics + textfile collector)
   ansible.builtin.import_tasks: node-exporter.yml
-
-- name: frcooper/ollama-exporter
-  ansible.builtin.import_tasks: ollama-exporter.yml
-  when: obs_ollama_exporter_install_method != "skip"
 
 - name: vmagent (scrape + remote_write to local VM)
   ansible.builtin.import_tasks: vmagent.yml

@@ -1,7 +1,7 @@
 ---
-# Canary on the DGX runs the same TS suite as on the Mac. The repo
-# checkout from pull-dashboards.yml ({{ obs_repo_dir }}) provides
-# scripts/canary/run.ts; we just need node/npm + a systemd timer.
+# Canary on the DGX runs the same TS suite as on the Mac. We rsync the
+# scripts from the controller (same private-repo workaround as
+# dashboards) and need node/npm + a systemd timer on the host.
 
 - name: Ensure node + npm are installed (apt)
   ansible.builtin.apt:
@@ -11,6 +11,28 @@
     state: present
     update_cache: true
   when: obs_canary_node_install == "apt"
+
+- name: Verify canary source exists on the controller
+  ansible.builtin.stat:
+    path: "{{ obs_canary_local_src }}"
+  register: obs_canary_src_stat
+  delegate_to: localhost
+  become: false
+
+- name: Fail clearly if canary source is missing
+  ansible.builtin.fail:
+    msg: >-
+      Canary source {{ obs_canary_local_src }} not found on the
+      Ansible controller. Override obs_canary_local_src in
+      group_vars/dgx.yml if your local-inference checkout lives elsewhere.
+  when: not obs_canary_src_stat.stat.exists
+
+- name: Sync canary scripts to DGX
+  ansible.posix.synchronize:
+    src: "{{ obs_canary_local_src }}"
+    dest: "{{ obs_canary_remote_dir }}/"
+    delete: true
+    recursive: true
 
 - name: Render canary service unit
   ansible.builtin.template:

@@ -2,8 +2,8 @@
 # Stand up the observability stack on the DGX.
 #
 # v1 (this playbook): VictoriaMetrics + Grafana + DCGM + node_exporter
-# + frcooper/ollama-exporter + vmagent + canary timer + dashboards.
-# Telegram alerting (v2) is not wired here yet.
+# + vmagent + canary timer + dashboards. Telegram alerting (v2) is
+# not wired here yet.
 #
 # Run:
 #   ansible-playbook playbooks/deploy-observability.yml \
