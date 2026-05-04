@@ -1,0 +1,21 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/canary.service.j2.
+# Triggered by observability-canary.timer (daily 03:00).
+# Output goes to {{ obs_textfile_dir }}/inference_canary.prom which
+# node_exporter's textfile collector picks up on next scrape.
+
+[Unit]
+Description=Inference canary regression suite (DGX)
+After=network-online.target ollama.service vllm.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ obs_canary_user }}
+Group={{ obs_canary_user }}
+WorkingDirectory={{ obs_canary_workdir }}
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/npx tsx {{ obs_canary_workdir }}/scripts/canary/run.ts \
+    --host dgx-spark \
+    --textfile-out {{ obs_textfile_dir }}/inference_canary.prom
+TimeoutStartSec=600

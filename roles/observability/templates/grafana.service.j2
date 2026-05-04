@@ -1,0 +1,32 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/grafana.service.j2.
+# Anonymous viewer for read access (single-network single-dev tradeoff
+# per design doc); admin password via vault.
+
+[Unit]
+Description=Grafana (alert evaluator + dashboards)
+After=docker.service network-online.target observability-victoriametrics.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f observability-grafana
+ExecStart=/usr/bin/docker run --rm \
+    --name observability-grafana \
+    --network host \
+    -v {{ obs_grafana_data_dir }}:/var/lib/grafana \
+    -v {{ obs_grafana_provisioning_dir }}:/etc/grafana/provisioning \
+    -v {{ obs_grafana_dashboards_dir }}:/var/lib/grafana/dashboards \
+    -e GF_SERVER_HTTP_PORT={{ obs_grafana_port }} \
+    -e GF_SECURITY_ADMIN_PASSWORD={{ obs_grafana_admin_password }} \
+    -e GF_AUTH_ANONYMOUS_ENABLED={{ obs_grafana_anon_enabled | string | lower }} \
+    -e GF_AUTH_ANONYMOUS_ORG_ROLE={{ obs_grafana_anon_org_role }} \
+    -e GF_INSTALL_PLUGINS= \
+    {{ obs_grafana_image }}
+ExecStop=/usr/bin/docker stop observability-grafana
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

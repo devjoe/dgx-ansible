@@ -82,3 +82,21 @@ vllm_max_images_per_prompt: 4
 vllm_version_floor: "0.7.0"
 vllm_transformers_floor: "4.46.0"
 vllm_pillow_floor: "11.0.0"
+
+# --- Observability stack (roles/observability/) ----------------------------
+# Activated by playbooks/deploy-observability.yml. Defaults live in
+# roles/observability/defaults/main.yml — only override here when you
+# need to deviate (e.g. bump a container image or change retention).
+#
+# Secrets (Grafana admin password, Telegram bot token for v2) live in
+# group_vars/dgx.yml.vault and are loaded at playbook time via
+# `--vault-password-file` or `--ask-vault-pass`.
+#
+# 90-day retention is large enough to seed v2's threshold derivation
+# from real σ rather than guesses (per design doc v1 success criteria).
+obs_grafana_admin_password: "{{ vault_grafana_admin_password | default('please-set-via-vault') }}"
+
+# v2 Telegram alerting — v1 leaves these unset. Defined here so the
+# variable lookup doesn't fail if v2 alert templates are pre-rendered.
+obs_telegram_bot_token: "{{ vault_telegram_bot_token | default('') }}"
+obs_telegram_chat_id: "{{ vault_telegram_chat_id | default('') }}"

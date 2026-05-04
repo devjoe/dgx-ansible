@@ -1,0 +1,14 @@
+---
+- name: Render DCGM exporter systemd unit
+  ansible.builtin.template:
+    src: dcgm-exporter.service.j2
+    dest: /etc/systemd/system/observability-dcgm-exporter.service
+    mode: "0644"
+  notify: restart dcgm-exporter
+
+- name: Enable + start DCGM exporter
+  ansible.builtin.systemd:
+    name: observability-dcgm-exporter
+    enabled: true
+    state: started
+    daemon_reload: true

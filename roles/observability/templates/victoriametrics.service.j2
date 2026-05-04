@@ -1,0 +1,26 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/victoriametrics.service.j2.
+
+[Unit]
+Description=VictoriaMetrics single-node TSDB
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f observability-victoriametrics
+ExecStart=/usr/bin/docker run --rm \
+    --name observability-victoriametrics \
+    --network host \
+    -v {{ obs_vm_data_dir }}:/victoria-metrics-data \
+    {{ obs_victoriametrics_image }} \
+    -storageDataPath=/victoria-metrics-data \
+    -httpListenAddr=:{{ obs_vm_port }} \
+    -retentionPeriod={{ obs_vm_retention }}
+ExecStop=/usr/bin/docker stop observability-victoriametrics
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

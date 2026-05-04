@@ -1,0 +1,19 @@
+---
+# Stand up the observability stack on the DGX.
+#
+# v1 (this playbook): VictoriaMetrics + Grafana + DCGM + node_exporter
+# + frcooper/ollama-exporter + vmagent + canary timer + dashboards.
+# Telegram alerting (v2) is not wired here yet.
+#
+# Run:
+#   ansible-playbook playbooks/deploy-observability.yml \
+#       --vault-password-file .vault_pass
+#
+# Idempotent — safe to re-run.
+
+- name: Deploy DGX-side observability stack
+  hosts: dgx
+  become: true
+  gather_facts: true
+  roles:
+    - observability

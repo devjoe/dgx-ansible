@@ -1,0 +1,55 @@
+---
+# DGX-side observability stack. Idempotent — re-run safe.
+#
+# Stack: VictoriaMetrics single-node + Grafana + DCGM exporter
+# + node_exporter + frcooper/ollama-exporter + vmagent (local scrape)
+# + canary systemd timer + vLLM /metrics scrape config.
+#
+# Design: ~/Projects/local-inference/docs/observability-design-2026-05.md.
+# v1 ships data path with no alerts; v2 wires Telegram alerts after
+# 7 days of baseline.
+
+- name: Prereqs (docker + dirs + ufw)
+  ansible.builtin.import_tasks: prereqs.yml
+
+- name: VictoriaMetrics single-node
+  ansible.builtin.import_tasks: victoriametrics.yml
+
+- name: DCGM exporter
+  ansible.builtin.import_tasks: dcgm-exporter.yml
+
+- name: node_exporter (host metrics + textfile collector)
+  ansible.builtin.import_tasks: node-exporter.yml
+
+- name: frcooper/ollama-exporter
+  ansible.builtin.import_tasks: ollama-exporter.yml
+  when: obs_ollama_exporter_install_method != "skip"
+
+- name: vmagent (scrape + remote_write to local VM)
+  ansible.builtin.import_tasks: vmagent.yml
+
+- name: Pull Grafana dashboards from local-inference repo
+  ansible.builtin.import_tasks: pull-dashboards.yml
+
+- name: Grafana
+  ansible.builtin.import_tasks: grafana.yml
+
+- name: Canary systemd timer
+  ansible.builtin.import_tasks: canary-timer.yml
+
+- name: Final reachability check
+  ansible.builtin.uri:
+    url: "http://localhost:{{ item.port }}{{ item.path }}"
+    status_code: 200
+  register: obs_health
+  retries: 30
+  delay: 5
+  until: obs_health.status == 200
+  loop:
+    - { name: "VictoriaMetrics", port: "{{ obs_vm_port }}", path: "/health" }
+    - { name: "Grafana",         port: "{{ obs_grafana_port }}", path: "/api/health" }
+    - { name: "node_exporter",   port: "{{ obs_node_exporter_port }}", path: "/metrics" }
+    - { name: "DCGM",            port: "{{ obs_dcgm_port }}", path: "/metrics" }
+    - { name: "vmagent",         port: "{{ obs_vmagent_port }}", path: "/metrics" }
+  loop_control:
+    label: "{{ item.name }}"

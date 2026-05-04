@@ -1,0 +1,27 @@
+---
+- name: Render vmagent scrape config
+  ansible.builtin.template:
+    src: vmagent-scrape.yml.j2
+    dest: "{{ obs_data_root }}/vmagent-scrape.yml"
+    mode: "0644"
+  notify: restart vmagent
+
+- name: Render vmagent systemd unit
+  ansible.builtin.template:
+    src: vmagent.service.j2
+    dest: /etc/systemd/system/observability-vmagent.service
+    mode: "0644"
+  notify: restart vmagent
+
+- name: Ensure vmagent buffer dir exists
+  ansible.builtin.file:
+    path: "{{ obs_data_root }}/vmagent-buffer"
+    state: directory
+    mode: "0755"
+
+- name: Enable + start vmagent
+  ansible.builtin.systemd:
+    name: observability-vmagent
+    enabled: true
+    state: started
+    daemon_reload: true

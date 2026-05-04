@@ -2,6 +2,10 @@
 *.log
 .vault_pass
 .vault_password
+
+# Vault file is committed encrypted, but never the plaintext working copy.
+group_vars/dgx.yml.vault.plain
+group_vars/dgx.yml.vault.bak
 .DS_Store
 __pycache__/
 *.pyc

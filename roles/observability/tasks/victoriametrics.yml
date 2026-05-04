@@ -1,0 +1,17 @@
+---
+- name: Render VictoriaMetrics systemd unit
+  ansible.builtin.template:
+    src: victoriametrics.service.j2
+    dest: /etc/systemd/system/observability-victoriametrics.service
+    mode: "0644"
+  notify: restart victoriametrics
+
+- name: Enable + start VictoriaMetrics
+  ansible.builtin.systemd:
+    name: observability-victoriametrics
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending VictoriaMetrics restart before downstream tasks
+  ansible.builtin.meta: flush_handlers

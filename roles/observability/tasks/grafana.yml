@@ -1,0 +1,28 @@
+---
+- name: Render Grafana datasource provisioning
+  ansible.builtin.template:
+    src: grafana-datasources.yml.j2
+    dest: "{{ obs_grafana_provisioning_dir }}/datasources/victoriametrics.yml"
+    mode: "0644"
+  notify: restart grafana
+
+- name: Render Grafana dashboard provider
+  ansible.builtin.template:
+    src: grafana-dashboards-provider.yml.j2
+    dest: "{{ obs_grafana_provisioning_dir }}/dashboards/provider.yml"
+    mode: "0644"
+  notify: restart grafana
+
+- name: Render Grafana systemd unit
+  ansible.builtin.template:
+    src: grafana.service.j2
+    dest: /etc/systemd/system/observability-grafana.service
+    mode: "0644"
+  notify: restart grafana
+
+- name: Enable + start Grafana
+  ansible.builtin.systemd:
+    name: observability-grafana
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,35 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/node-exporter.service.j2.
+# Mounts /proc, /sys, / read-only so the containerized exporter can
+# report host-level metrics. Textfile collector reads {{ obs_textfile_dir }}
+# — the canary timer writes its .prom file there.
+
+[Unit]
+Description=Prometheus node_exporter (host metrics + textfile collector)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f observability-node-exporter
+ExecStart=/usr/bin/docker run --rm \
+    --name observability-node-exporter \
+    --network host \
+    --pid host \
+    -v /proc:/host/proc:ro \
+    -v /sys:/host/sys:ro \
+    -v /:/rootfs:ro \
+    -v {{ obs_textfile_dir }}:/textfile:ro \
+    {{ obs_node_exporter_image }} \
+    --path.procfs=/host/proc \
+    --path.sysfs=/host/sys \
+    --path.rootfs=/rootfs \
+    --web.listen-address=:{{ obs_node_exporter_port }} \
+    --collector.textfile.directory=/textfile
+ExecStop=/usr/bin/docker stop observability-node-exporter
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

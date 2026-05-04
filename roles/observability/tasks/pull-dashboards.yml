@@ -1,0 +1,23 @@
+---
+# Pull dashboard JSON + alert YAML from local-inference at deploy time.
+# Cross-repo dependency resolution: domain knowledge (dashboards
+# describing inference) lives in local-inference; provisioning lives
+# here in dgx-ansible.
+
+- name: Clone or update local-inference repo for dashboards
+  ansible.builtin.git:
+    repo: "{{ obs_dashboards_repo_url }}"
+    dest: "{{ obs_repo_dir }}"
+    version: "{{ obs_dashboards_repo_branch }}"
+    force: true
+    update: true
+  register: obs_repo_pull
+
+- name: Sync dashboards into Grafana provisioning dir
+  ansible.builtin.synchronize:
+    src: "{{ obs_repo_dir }}/{{ obs_dashboards_repo_subpath }}/"
+    dest: "{{ obs_grafana_dashboards_dir }}/"
+    delete: true
+    recursive: true
+  delegate_to: "{{ inventory_hostname }}"
+  when: obs_repo_pull is succeeded

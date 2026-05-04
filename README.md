@@ -42,23 +42,31 @@ service bound directly on `0.0.0.0:8000`.
 
 ## Open work / next steps
 
-### Observability (v1 not yet started)
+### Observability (v1 shipped 2026-05-04 — collecting baseline)
 
-The observability design lives in **`~/Projects/local-inference/docs/observability-design-2026-05.md`**
-(approved 2026-05-04). The plan adds a new role `roles/observability/` here
-with these tasks:
+`roles/observability/` ships VictoriaMetrics + Grafana + DCGM exporter
++ node_exporter + frcooper/ollama-exporter + vmagent + vLLM scrape +
+canary systemd timer. Stand it up with:
 
-- VictoriaMetrics single-node + Grafana on the DGX
-- DCGM exporter (GPU utilisation / mem / power / temp)
-- node_exporter for host metrics
-- frcooper/ollama-exporter (polling — no inline proxy on the request path)
-- vLLM native `/metrics` scrape config
-- vmagent on both Mac + DGX
-- Canary timer (3-prompt regression suite, daily 03:00 + manual `make canary`)
+```bash
+cp group_vars/dgx.yml.vault.example group_vars/dgx.yml.vault
+ansible-vault encrypt group_vars/dgx.yml.vault   # set Grafana admin pw
+echo "<your-vault-password>" > .vault_pass
+make deploy-obs
+make status-obs
+make canary-once       # trigger the canary service immediately to backfill
+```
 
-Secrets (Telegram bot token, Grafana admin password) go in **Ansible vault**
-under `group_vars/dgx.yml.vault`. Read the design doc for the full v1/v2/v3
-sequencing before starting.
+Grafana lands at `http://gx10.local:3000` (anonymous viewer; admin
+login uses the password from the vault). Dashboard `Inference
+Overview (v1)` is auto-loaded by the provisioner — it pulls from
+`local-inference/obs/dashboards/` at deploy time.
+
+**v1 success target**: 7 consecutive days of canary runs visible
+on the dashboard. Once we have ~7 days of σ-baseline, v2 wires
+Telegram alerts (decode tok/s drop > 10%; cold-load absolute thresholds;
+any-error triggers). v2 sequencing is in
+`~/Projects/local-inference/docs/observability-design-2026-05.md`.
 
 ### Tracking
 
@@ -82,6 +90,9 @@ make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
 make unload                # POST keep_alive:0 to free VRAM
 make lint                  # ansible --syntax-check on all playbooks
+make deploy-obs            # stand up obs stack (needs .vault_pass + dgx.yml.vault)
+make status-obs            # systemctl state of every observability unit
+make canary-once           # trigger the obs canary service immediately
 ```
 
 `ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on
@@ -119,21 +130,25 @@ blindly copy flags between hosts. See
 ```
 dgx-ansible/
 ├── README.md                   # ← you are here
-├── ansible.cfg                 # ssh + output settings
+├── ansible.cfg                 # ssh + output + roles_path
 ├── inventory.ini               # [dgx] gx10.local
 ├── requirements.yml            # community.general, ansible.posix
 ├── site.yml                    # main playbook (ollama + vllm roles)
 ├── benchmark.yml               # measure-only Ollama playbook
 ├── benchmark-vllm.yml          # vLLM up-check + data-URI regression
 ├── group_vars/
-│   └── dgx.yml                 # SOURCE OF TRUTH (env, models, vLLM knobs)
+│   ├── dgx.yml                 # SOURCE OF TRUTH (env, models, vLLM knobs, obs)
+│   └── dgx.yml.vault.example   # template for encrypted secrets (Grafana pw, Telegram)
+├── playbooks/
+│   └── deploy-observability.yml  # observability v1 standalone playbook
 ├── roles/
 │   ├── ollama/                 # install + systemd + firewall + model pulls
 │   ├── vllm/                   # venv + systemd + firewall + health check
-│   └── benchmark/              # unload, warm, time eval calls
+│   ├── benchmark/              # unload, warm, time eval calls
+│   └── observability/          # VM + Grafana + exporters + canary timer (v1)
 ├── docs/
 │   └── handover-prismaquant.md # paused investigation (resume notes)
-└── Makefile                    # deploy / benchmark / status / unload / ping / lint
+└── Makefile                    # deploy / benchmark / status / deploy-obs / lint
 ```
 
 Everything under `.archive/` is dead code kept for reference only — safe to

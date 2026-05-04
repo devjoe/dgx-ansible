@@ -1,0 +1,22 @@
+---
+# Example vault file. Encrypt + commit a real version as
+# group_vars/dgx.yml.vault using:
+#   ansible-vault encrypt group_vars/dgx.yml.vault
+#
+# Decrypt to edit:
+#   ansible-vault edit group_vars/dgx.yml.vault
+#
+# Pass the vault password with `--vault-password-file=.vault_pass` or
+# `--ask-vault-pass` on each playbook invocation.
+
+# Grafana admin user password (login at http://gx10.local:3000 with
+# user "admin"). Anonymous viewer is enabled separately.
+vault_grafana_admin_password: "REPLACE-WITH-A-LONG-RANDOM-STRING"
+
+# v2 alerting (Telegram bot). v1 deploy leaves these blank.
+# To set up:
+#   1. DM @BotFather on Telegram, /newbot, save the token below.
+#   2. Send any message to your new bot.
+#   3. curl https://api.telegram.org/bot<TOKEN>/getUpdates → chat.id
+vault_telegram_bot_token: ""
+vault_telegram_chat_id: ""

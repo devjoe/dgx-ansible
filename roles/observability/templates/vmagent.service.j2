@@ -1,0 +1,31 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/vmagent.service.j2.
+# vmagent on the DGX scrapes the local exporter set + vLLM /metrics
+# and remote_writes to the in-process VictoriaMetrics. The Mac vmagent
+# remote_writes here too, so VM ends up with both hosts' data.
+
+[Unit]
+Description=vmagent (DGX-side scrape + remote_write to local VM)
+After=docker.service network-online.target observability-victoriametrics.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f observability-vmagent
+ExecStart=/usr/bin/docker run --rm \
+    --name observability-vmagent \
+    --network host \
+    -v {{ obs_data_root }}/vmagent-scrape.yml:/etc/vmagent/scrape.yml:ro \
+    -v {{ obs_data_root }}/vmagent-buffer:/vmagent-buffer \
+    {{ obs_vmagent_image }} \
+    -promscrape.config=/etc/vmagent/scrape.yml \
+    -remoteWrite.url=http://127.0.0.1:{{ obs_vm_port }}/api/v1/write \
+    -remoteWrite.tmpDataPath=/vmagent-buffer \
+    -httpListenAddr=:{{ obs_vmagent_port }}
+ExecStop=/usr/bin/docker stop observability-vmagent
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

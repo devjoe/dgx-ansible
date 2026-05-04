@@ -1,0 +1,27 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/dcgm-exporter.service.j2.
+# DCGM exporter exposes per-GPU utilization, memory, power, temperature
+# on /metrics. Vendored Blackwell-supported image per design doc.
+
+[Unit]
+Description=NVIDIA DCGM Exporter (GPU metrics)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f observability-dcgm-exporter
+ExecStart=/usr/bin/docker run --rm \
+    --name observability-dcgm-exporter \
+    --gpus all \
+    --cap-add SYS_ADMIN \
+    --network host \
+    -e DCGM_EXPORTER_LISTEN=:{{ obs_dcgm_port }} \
+    {{ obs_dcgm_exporter_image }}
+ExecStop=/usr/bin/docker stop observability-dcgm-exporter
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/canary.timer.j2.
+
+[Unit]
+Description=Daily inference canary trigger (DGX)
+
+[Timer]
+OnCalendar={{ obs_canary_oncalendar }}
+Persistent=true
+RandomizedDelaySec=120
+Unit=observability-canary.service
+
+[Install]
+WantedBy=timers.target

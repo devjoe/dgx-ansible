@@ -1,0 +1,79 @@
+---
+# Common dependencies for the observability stack.
+
+- name: Ensure docker.io + git are installed
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - git
+    state: present
+    update_cache: true
+
+- name: Ensure docker is enabled + running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Ensure NVIDIA Container Toolkit packages are present
+  ansible.builtin.apt:
+    name:
+      - nvidia-container-toolkit
+    state: present
+  register: obs_nvct_install
+  failed_when: false  # vendor image may already provide nvidia-container-runtime
+
+- name: Configure docker for NVIDIA runtime (if nvidia-ctk is present)
+  ansible.builtin.command:
+    cmd: nvidia-ctk runtime configure --runtime=docker
+  register: obs_nvidia_ctk
+  changed_when: "'configuration changed' in (obs_nvidia_ctk.stdout | default(''))"
+  failed_when: obs_nvidia_ctk.rc != 0 and 'not found' not in (obs_nvidia_ctk.stderr | default(''))
+  when: obs_nvct_install is succeeded
+
+- name: Restart docker if NVIDIA runtime config changed
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  when: obs_nvidia_ctk.changed | default(false)
+
+- name: Create observability data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ obs_data_root }}"
+    - "{{ obs_vm_data_dir }}"
+    - "{{ obs_grafana_data_dir }}"
+    - "{{ obs_grafana_provisioning_dir }}"
+    - "{{ obs_grafana_provisioning_dir }}/datasources"
+    - "{{ obs_grafana_provisioning_dir }}/dashboards"
+    - "{{ obs_grafana_dashboards_dir }}"
+    - "{{ obs_textfile_dir }}"
+
+# Grafana container runs as uid 472 by default.
+- name: Ensure Grafana data dir is owned by Grafana container uid
+  ansible.builtin.file:
+    path: "{{ obs_grafana_data_dir }}"
+    state: directory
+    owner: "472"
+    group: "472"
+    mode: "0755"
+
+- name: Open observability ports from LAN (ufw)
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ lan_cidr }}"
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ obs_vm_port }}"
+    - "{{ obs_grafana_port }}"
+    - "{{ obs_dcgm_port }}"
+    - "{{ obs_node_exporter_port }}"
+    - "{{ obs_vmagent_port }}"
+    - "{{ obs_ollama_exporter_port }}"
+  when: ansible_facts.services['ufw.service'] is defined or
+        (ansible_facts.packages['ufw'] is defined)
+  ignore_errors: true

@@ -1,0 +1,14 @@
+---
+- name: Render node_exporter systemd unit
+  ansible.builtin.template:
+    src: node-exporter.service.j2
+    dest: /etc/systemd/system/observability-node-exporter.service
+    mode: "0644"
+  notify: restart node-exporter
+
+- name: Enable + start node_exporter
+  ansible.builtin.systemd:
+    name: observability-node-exporter
+    enabled: true
+    state: started
+    daemon_reload: true

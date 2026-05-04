@@ -1,0 +1,19 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/observability/templates/grafana-dashboards-provider.yml.j2.
+# Auto-loads every JSON in /var/lib/grafana/dashboards/ on Grafana
+# startup. Refreshed every 30s — re-running the dashboards-pull task
+# (re-cloning local-inference repo) propagates within 30s without
+# Grafana restart.
+apiVersion: 1
+
+providers:
+  - name: local-inference
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

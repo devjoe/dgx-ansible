@@ -1,0 +1,34 @@
+---
+# Canary on the DGX runs the same TS suite as on the Mac. The repo
+# checkout from pull-dashboards.yml ({{ obs_repo_dir }}) provides
+# scripts/canary/run.ts; we just need node/npm + a systemd timer.
+
+- name: Ensure node + npm are installed (apt)
+  ansible.builtin.apt:
+    name:
+      - nodejs
+      - npm
+    state: present
+    update_cache: true
+  when: obs_canary_node_install == "apt"
+
+- name: Render canary service unit
+  ansible.builtin.template:
+    src: canary.service.j2
+    dest: /etc/systemd/system/observability-canary.service
+    mode: "0644"
+  notify: reload systemd for canary
+
+- name: Render canary timer unit
+  ansible.builtin.template:
+    src: canary.timer.j2
+    dest: /etc/systemd/system/observability-canary.timer
+    mode: "0644"
+  notify: reload systemd for canary
+
+- name: Enable + start canary timer
+  ansible.builtin.systemd:
+    name: observability-canary.timer
+    enabled: true
+    state: started
+    daemon_reload: true
