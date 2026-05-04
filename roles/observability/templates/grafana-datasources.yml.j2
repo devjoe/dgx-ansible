@@ -4,6 +4,10 @@ apiVersion: 1
 
 datasources:
   - name: VictoriaMetrics
+    # Pinned UID — dashboard JSONs reference datasource by uid, so a
+    # provisioner-generated random uid would break every panel. If you
+    # rename, update obs/dashboards/*.json in lock-step.
+    uid: victoriametrics
     type: prometheus
     access: proxy
     url: http://127.0.0.1:{{ obs_vm_port }}
