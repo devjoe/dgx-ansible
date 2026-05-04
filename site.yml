@@ -1,8 +1,12 @@
 ---
 # Top-level playbook: converge the DGX Spark to the desired state for
-# the fb-reader stack — Ollama (Tier A) + vLLM with image-sanitizing
-# proxy (Tier B). Idempotent — safe to run repeatedly. A second
-# consecutive run should report `changed=0`.
+# the fb-reader stack — Ollama (Tier A) + vLLM (Tier B). Idempotent
+# — safe to run repeatedly. A second consecutive run should report
+# `changed=0`.
+#
+# Note: the vLLM image-sanitizing proxy was dropped 2026-04 — fb-reader
+# now does fetch + JPEG re-encode client-side, so vLLM only ever sees
+# `data:image/jpeg;base64,...` URIs that PIL decodes trivially.
 
 - name: Configure DGX Spark for Ollama + vLLM hosting
   hosts: dgx

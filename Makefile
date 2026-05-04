@@ -23,7 +23,7 @@ deploy:  ## Converge DGX to group_vars state (idempotent)
 benchmark:  ## Unload, warm, run N timed eval calls → tok/s
 	$(ANSIBLE) benchmark.yml
 
-benchmark-vllm:  ## Sanity-check vLLM Tier B + image sanitizer
+benchmark-vllm:  ## Sanity-check vLLM Tier B (text + data-URI image)
 	$(ANSIBLE) benchmark-vllm.yml
 
 status:  ## Show what Ollama currently has loaded
@@ -31,9 +31,9 @@ status:  ## Show what Ollama currently has loaded
 		-a "url=http://localhost:11434/api/ps return_content=yes" \
 		--one-line | sed 's/.*"content": //' | sed 's/}}}$$/}}/' | python3 -m json.tool
 
-status-vllm:  ## Show vLLM service state + sanitizer health
+status-vllm:  ## Show vLLM service state + /v1/models response
 	@ansible dgx -m ansible.builtin.shell \
-		-a "systemctl is-active vllm vllm-sanitizer; curl -s http://localhost:8000/v1/models | head -c 200" \
+		-a "systemctl is-active vllm; curl -s http://localhost:8000/v1/models | head -c 200" \
 		--one-line
 
 unload:  ## Force-unload the benchmark model (reclaim VRAM)

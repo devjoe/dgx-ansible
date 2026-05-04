@@ -9,3 +9,7 @@ __pycache__/
 # Local-only overrides
 inventory.local.ini
 group_vars/local.yml
+
+# Untracked working dirs
+scratch/
+.archive/

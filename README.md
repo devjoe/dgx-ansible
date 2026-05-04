@@ -1,118 +1,193 @@
 # dgx-ansible
 
-Declarative management of the NVIDIA DGX Spark (`gx10.local` / `192.168.99.2`) running Ollama (Tier A) and vLLM (Tier B) for the [fb-reader](https://github.com/devjoe/fb-reader) Chrome extension.
+Declarative management of the NVIDIA DGX Spark (`gx10.local` / `192.168.99.2`)
+running **Ollama (Tier A)** and **vLLM (Tier B)** for the [fb-reader](https://github.com/devjoe/fb-reader)
+Chrome extension. Companion repo to `~/Projects/local-inference/` (which holds
+the Mac side + cross-host benchmark scripts + the canonical model-choice docs).
 
-All host state — systemd env vars, firewall rules, model list, vLLM serving knobs — lives in `group_vars/dgx.yml`. Run `make deploy` to converge the host. Run `make benchmark` to measure Ollama `tok/s`. Run `make benchmark-vllm` to sanity-check vLLM + the image-sanitizing proxy.
+All host state — systemd env vars, firewall rules, model list, vLLM serving
+knobs — lives in **`group_vars/dgx.yml`**. Run `make deploy` to converge.
 
-## Tier B (vLLM) image-sanitizing proxy
+## Agent quick start
 
-The `vllm` role deploys two systemd services:
+Stop after #1 unless the task needs more:
 
-- `vllm` — vLLM serving `qwen3.6:35b-a3b` (MoE-AWQ-4bit) bound to `127.0.0.1:8001`.
-- `vllm-sanitizer` — a small FastAPI reverse proxy on `0.0.0.0:8000` that re-encodes inbound images via Pillow before forwarding to vLLM. Anything Pillow can't decode (animated WebP, signed-token 403 HTML bodies, SVG data URIs) is silently dropped from the request so vLLM never crashes on `image.size` unpacking. fb-reader keeps pointing at `http://gx10.local:8000/v1/chat/completions` — the only observable change is "image-decode crashes go away".
+1. **This README** — current state + open work + the deploy/benchmark commands.
+2. **`group_vars/dgx.yml`** — single source of truth for every knob. If you
+   want to change something, edit here, then `make deploy`.
+3. **`roles/{ollama,vllm,benchmark}/tasks/main.yml`** — what `make deploy` and
+   `make benchmark` actually execute, in order.
+4. **`docs/handover-prismaquant.md`** — paused investigation into a
+   95 tok/s PrismaQuant + DFlash config. Read only if reviving that thread.
 
-The proxy adds `X-Sanitized-Kept` and `X-Sanitized-Dropped` response headers so the client can tell how many images survived. Tunables live under `vllm_sanitizer_*` in `group_vars/dgx.yml`.
+For Mac-side config, model-choice rationale, or cross-endpoint benchmarks, go
+to `~/Projects/local-inference/README.md`.
 
-## Prerequisites
+## Current state (2026-05-04)
 
-On the MacBook:
+| | Tier A (Ollama) | Tier B (vLLM) |
+|---|---|---|
+| Endpoint | `gx10.local:11434` | `gx10.local:8000` |
+| Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Qwen/Qwen3.6-35B-A3B-AWQ` |
+| Role | text classification fallback / quality backstop | multimodal Tier B classifier |
+| Service unit | `ollama` (systemd) | `vllm` (systemd) |
+| Image handling | n/a | client-side prefetch in fb-reader → `data:image/jpeg;base64,...` |
+| Speed flags | `FLASH_ATTENTION=0`, `KV_CACHE_TYPE=fp16` | AWQ-Marlin, `gpu-memory-utilization=0.85` |
+| Keep-alive | `OLLAMA_KEEP_ALIVE=24h` | n/a (vLLM holds the model in VRAM permanently) |
 
-- `ansible` (via `brew install ansible` or `pipx install ansible-core`)
-- SSH access to `gx10.local` as a sudo-capable user (configured in `inventory.ini`, default `devjoe`)
-- Passwordless sudo on the DGX (`devjoe ALL=(ALL) NOPASSWD:ALL` in `/etc/sudoers.d/`) OR run playbooks with `--ask-become-pass`
+The image-sanitizing proxy (`vllm-sanitizer`) was **removed 2026-04** in commit
+`ed898fd`. fb-reader now fetches + JPEG-re-encodes images client-side against
+the user's authenticated FB session. vLLM has been simplified to a single
+service bound directly on `0.0.0.0:8000`.
 
-## Quick start
+## Open work / next steps
+
+### Observability (v1 not yet started)
+
+The observability design lives in **`~/Projects/local-inference/docs/observability-design-2026-05.md`**
+(approved 2026-05-04). The plan adds a new role `roles/observability/` here
+with these tasks:
+
+- VictoriaMetrics single-node + Grafana on the DGX
+- DCGM exporter (GPU utilisation / mem / power / temp)
+- node_exporter for host metrics
+- frcooper/ollama-exporter (polling — no inline proxy on the request path)
+- vLLM native `/metrics` scrape config
+- vmagent on both Mac + DGX
+- Canary timer (3-prompt regression suite, daily 03:00 + manual `make canary`)
+
+Secrets (Telegram bot token, Grafana admin password) go in **Ansible vault**
+under `group_vars/dgx.yml.vault`. Read the design doc for the full v1/v2/v3
+sequencing before starting.
+
+### Tracking
+
+- **PrismaQuant + DFlash investigation paused** — see `docs/handover-prismaquant.md`.
+  Resume only when there's a clean V0-engine flag set for `compressed-tensors`
+  on Blackwell.
+- **Bench model drift**: `bench_model: qwen3.5:latest` in `group_vars/dgx.yml`,
+  but the deployed primary is `qwen3.6:35b-a3b`. Decide whether benchmark
+  should track the deployed model or stay on qwen3.5 as a stable A/B baseline.
+
+## Quick reference
 
 ```bash
-git clone git@github.com:devjoe/dgx-ansible.git
-cd dgx-ansible
-make install-deps          # ansible collections
-make ping                  # verify SSH + sudo reach
-make deploy                # converge DGX to group_vars state
-make status                # inspect currently-loaded models
-make benchmark             # timed eval — prints tok/s summary
+make help                  # list targets
+make install-deps          # install ansible-galaxy collections
+make ping                  # SSH + sudo reach
+make deploy                # converge Ollama + vLLM to group_vars state
+make status                # GET /api/ps (Ollama loaded models)
+make status-vllm           # systemctl is-active vllm + GET /v1/models
+make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
+make benchmark-vllm        # text + data-URI image regression check
+make unload                # POST keep_alive:0 to free VRAM
+make lint                  # ansible --syntax-check on all playbooks
+```
+
+`ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on
+the very first `make deploy` before NOPASSWD sudo is set up):
+
+```bash
+ASK_BECOME=1 make deploy
 ```
 
 ## A/B testing speed flags
 
-The flags `OLLAMA_FLASH_ATTENTION` and `OLLAMA_KV_CACHE_TYPE` are well-known to regress on some hardware × model combinations ([ollama#12432](https://github.com/ollama/ollama/issues/12432), [#11949](https://github.com/ollama/ollama/issues/11949), [#9683](https://github.com/ollama/ollama/issues/9683), [#6769](https://github.com/ollama/ollama/issues/6769)). They default to OFF. To benchmark on/off:
+`OLLAMA_FLASH_ATTENTION` and `OLLAMA_KV_CACHE_TYPE` are well-known to regress
+on some hardware × model combos
+([ollama#12432](https://github.com/ollama/ollama/issues/12432),
+[#11949](https://github.com/ollama/ollama/issues/11949),
+[#9683](https://github.com/ollama/ollama/issues/9683),
+[#6769](https://github.com/ollama/ollama/issues/6769)). They default to OFF on
+the DGX. To benchmark on/off:
 
 ```bash
-# Baseline (off)
-make deploy && make benchmark
-
-# Flip FLASH_ATTENTION on
+make deploy && make benchmark               # baseline (off)
 sed -i '' 's/ollama_flash_attention: false/ollama_flash_attention: true/' group_vars/dgx.yml
-make deploy && make benchmark
-
-# Revert
-git checkout group_vars/dgx.yml
-make deploy
+make deploy && make benchmark               # FA on
+git checkout group_vars/dgx.yml && make deploy   # revert
 ```
 
-Each `make deploy` re-renders `/etc/systemd/system/ollama.service.d/override.conf` and restarts Ollama exactly once when the file actually changes.
+Each `make deploy` re-renders `/etc/systemd/system/ollama.service.d/override.conf`
+and restarts Ollama exactly once when the file actually changes. Same flag has
+**opposite verdicts** on Mac (`FA=1` wins) vs DGX (`FA=1` regresses) — never
+blindly copy flags between hosts. See
+`~/Projects/local-inference/docs/endpoints.md` for evidence.
 
 ## Repo layout
 
 ```
 dgx-ansible/
-├── ansible.cfg              # ssh/output settings
-├── inventory.ini            # [dgx] gx10.local
-├── requirements.yml         # community.general, ansible.posix
-├── site.yml                 # main playbook (ollama role)
-├── benchmark.yml            # measure-only playbook (benchmark role)
-├── group_vars/dgx.yml       # single source of truth
+├── README.md                   # ← you are here
+├── ansible.cfg                 # ssh + output settings
+├── inventory.ini               # [dgx] gx10.local
+├── requirements.yml            # community.general, ansible.posix
+├── site.yml                    # main playbook (ollama + vllm roles)
+├── benchmark.yml               # measure-only Ollama playbook
+├── benchmark-vllm.yml          # vLLM up-check + data-URI regression
+├── group_vars/
+│   └── dgx.yml                 # SOURCE OF TRUTH (env, models, vLLM knobs)
 ├── roles/
-│   ├── ollama/              # install + systemd + firewall + model pulls
-│   └── benchmark/           # unload, warm, time eval calls
-└── Makefile                 # deploy / benchmark / status / unload / ping
+│   ├── ollama/                 # install + systemd + firewall + model pulls
+│   ├── vllm/                   # venv + systemd + firewall + health check
+│   └── benchmark/              # unload, warm, time eval calls
+├── docs/
+│   └── handover-prismaquant.md # paused investigation (resume notes)
+└── Makefile                    # deploy / benchmark / status / unload / ping / lint
 ```
 
-## What converging does
+Everything under `.archive/` is dead code kept for reference only — safe to
+ignore. `scratch/` (gitignored) holds external clones (e.g. ray-project/llmperf
+for one-off load tests).
+
+## What `make deploy` does
 
 1. Install Ollama from the upstream script (skipped if already installed).
-2. Render `/etc/systemd/system/ollama.service.d/override.conf` from `ollama-override.conf.j2` using values in `group_vars/dgx.yml`.
+2. Render `/etc/systemd/system/ollama.service.d/override.conf` from
+   `roles/ollama/templates/ollama-override.conf.j2` using `group_vars/dgx.yml`.
 3. Open UFW port `11434` from `lan_cidr`.
-4. Start/enable the `ollama` systemd unit; restart it if the override file changed.
-5. Pull any models listed in `ollama_models` that aren't already present (multi-GB, runs async with a 30-minute ceiling).
-6. Populate the operator workspace at `{{ remote_workdir }}` (default `/home/devjoe/Projects/Ollama`) with a readable mirror of the override, a README declaring this repo as the source of truth, and a `benchmarks/` directory.
-7. Assert `GET /api/tags` returns 200 and contains every model we just pulled.
+4. Start/enable the `ollama` systemd unit; restart it if the override changed.
+5. Pull any models in `ollama_models` not already present (multi-GB, async
+   with a 30 min ceiling).
+6. Mirror Ansible-managed state into the operator workdir `~/Projects/Ollama/`
+   on the DGX (override mirror, README, `benchmarks/` dir).
+7. Assert `GET /api/tags` returns 200 and contains every requested model.
+8. Provision the vLLM venv, render `/etc/systemd/system/vllm.service`, open
+   the LAN port, start the unit, wait for `/v1/models` to return 200.
 
-### Remote workspace (`~/Projects/Ollama` on the DGX)
+## What `make benchmark` does (Ollama)
 
-The DGX already has `~/Projects/Ollama/` containing a uv Python env, hand-written setup scripts, and notes. Ansible treats this as the canonical human-facing surface without clobbering existing files:
-
-```
-~/Projects/Ollama/
-├── main.py, pyproject.toml, uv.lock, .venv/   # left alone
-├── dgx-spark-ollama-setup.md                   # left alone
-├── setup-ollama-*.sh                           # left alone but DEPRECATED (see README.ansible.md)
-├── README.ansible.md                           # written by Ansible — source-of-truth declaration
-├── override.conf.mirror                        # readable copy of /etc/systemd/system/ollama.service.d/override.conf
-└── benchmarks/
-    └── 20260417T174500.json                    # each `make benchmark` appends one file
-```
-
-## What the benchmark does
-
-1. `POST /api/generate` with `keep_alive=0` to force-unload the current model (so a changed `num_ctx` actually takes effect).
-2. Poll `/api/ps` until `models: []`.
-3. Slurp the current `override.conf` to print exactly which flags were active.
-4. Run `bench_runs` (default 3) chat completions with `/no_think` + `think: false` and capture `eval_count` / `eval_duration`.
-5. Print per-run and mean `tok/s` in a block you can paste into a commit message.
+1. `POST /api/generate keep_alive=0` to force-unload the current model so a
+   changed `num_ctx` actually takes effect.
+2. Poll `/api/ps` until empty.
+3. Slurp the live `override.conf` to capture which flags were active.
+4. Run `bench_runs` (default 3) `/api/chat` calls with `/no_think` +
+   `think: false`, capturing `eval_count` / `eval_duration`.
+5. Print per-run + mean `tok/s` and persist a JSON record under
+   `~/Projects/Ollama/benchmarks/`.
 
 ## Why Ansible (and not X)
 
-- **vs shell + ssh**: Ansible is idempotent by default — the same `make deploy` works on a freshly-wiped DGX and on one that's already converged. Shell needs hand-rolled guards.
-- **vs NixOS**: Would require wiping the vendor OS. Too invasive for a turn-key box.
-- **vs Docker Compose**: GPU passthrough on ARM is still a papercut trail; Ollama's systemd unit already handles the NVIDIA runtime cleanly.
+- **vs shell + ssh**: Ansible is idempotent — same `make deploy` works on a
+  freshly-wiped DGX or one already converged. Shell needs hand-rolled guards.
+- **vs NixOS**: Would require wiping the vendor OS. Too invasive for a
+  turn-key box.
+- **vs Docker Compose**: GPU passthrough on ARM is still a papercut trail;
+  Ollama's systemd unit handles the NVIDIA runtime cleanly.
 - **vs Terraform**: Provisioning tool, not post-install state management.
 
-## Related docs
+## Related
 
-- [fb-reader/docs/dgx-spark-ollama-setup.md](https://github.com/devjoe/fb-reader/blob/main/docs/dgx-spark-ollama-setup.md) — human-readable narrative of the same setup.
-- [fb-reader/docs/llm-context-and-kv-cache.md](https://github.com/devjoe/fb-reader/blob/main/docs/llm-context-and-kv-cache.md) — why we picked these flag defaults.
+- `~/Projects/local-inference/` — Mac launchd plist, cross-endpoint benchmark,
+  observability design doc, model-choice rationale. Treat as the **co-pilot
+  repo** to this one.
+- [fb-reader/docs/dgx-spark-ollama-setup.md](https://github.com/devjoe/fb-reader/blob/main/docs/dgx-spark-ollama-setup.md) —
+  human-readable narrative of the same setup.
+- [fb-reader/docs/llm-context-and-kv-cache.md](https://github.com/devjoe/fb-reader/blob/main/docs/llm-context-and-kv-cache.md) —
+  why we picked these flag defaults.
 
 ## License
 
-MIT (infra code, no secrets). `inventory.ini` is committed because the hostname and username are not secret; if you fork this for another machine, edit inventory locally and don't commit credentials.
+MIT (infra code, no secrets). `inventory.ini` is committed because the hostname
+and username are not secret. Never commit a vault password file (`.vault_pass`,
+`.vault_password` are gitignored).
