@@ -1,13 +1,10 @@
 ---
 # Manage the vLLM Tier B daemon for fb-reader.
 #
-# vLLM serves the multimodal Tier B classifier directly on the LAN port.
-# Image normalization (re-encode SVG / animated frames / oversized
-# photos to JPEG, fetch FB CDN URLs against the user's authenticated
-# session) happens client-side in the fb-reader content script — see
-# `openspec/changes/2026-04-29-client-side-image-prefetch/` in
-# fb-reader. vLLM receives `data:image/jpeg;base64,...` URIs that PIL
-# decodes trivially, so no server-side sanitizer proxy is needed.
+# Encodes recipes/Intel_Qwen3.6-35B-A3B-int4-AutoRound.yaml — Intel
+# AutoRound INT4 + z-lab DFlash speculative decoding (k=8),
+# language-model-only. fb-reader's client-side image prefetch path
+# is bypassed (no vision in this profile).
 
 - name: Ensure vLLM workdir exists
   ansible.builtin.file:
@@ -17,11 +14,15 @@
     group: "{{ vllm_user }}"
     mode: "0755"
 
-- name: Ensure Python + venv prerequisites are installed
+- name: Ensure Python + venv + dev headers are installed
   ansible.builtin.apt:
     name:
       - python3-venv
       - python3-pip
+      # python3-dev — vLLM pulls fastsafetensors as sdist; building its
+      # C extension needs Python.h.
+      - python3-dev
+      - build-essential
     state: present
     update_cache: true
 
@@ -37,16 +38,12 @@
   changed_when: false
   become_user: "{{ vllm_user }}"
 
-# Pin floor versions so we can bump deliberately. Newer Pillow ships
-# fixes for several edge cases (truncated WebP, multi-frame APNG)
-# that occasionally surface even after client-side re-encode if a
-# data URI is somehow malformed.
-- name: Install / upgrade vLLM, transformers, Pillow
+# Pin floor versions so we can bump deliberately.
+- name: Install / upgrade vLLM, transformers
   ansible.builtin.pip:
     name:
       - "vllm>={{ vllm_version_floor }}"
       - "transformers>={{ vllm_transformers_floor }}"
-      - "Pillow>={{ vllm_pillow_floor }}"
     virtualenv: "{{ vllm_workdir }}/.venv"
     state: latest
     extra_args: "--upgrade-strategy eager"

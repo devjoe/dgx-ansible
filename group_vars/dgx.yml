@@ -54,13 +54,10 @@ bench_prompt: >-
   回傳 JSON {commercial, political, emotional, personal}，每個 0.0-1.0 之間。
 
 # --- vLLM Tier B daemon -----------------------------------------------
-# vLLM serves the multimodal Tier B classifier for fb-reader. Image
-# normalization (fetch FB CDN URLs against the user's authenticated
-# session, re-encode SVG / animated frames / oversized photos to JPEG)
-# happens client-side in the fb-reader content script — see
-# `openspec/changes/2026-04-29-client-side-image-prefetch/` in
-# fb-reader. vLLM receives `data:image/jpeg;base64,...` URIs that
-# PIL decodes trivially, so no server-side sanitizer proxy is needed.
+# Encodes recipes/Intel_Qwen3.6-35B-A3B-int4-AutoRound.yaml — Intel
+# AutoRound INT4 base + z-lab DFlash speculative decoding (k=8),
+# language-model-only (no vision; client-side image prefetch path
+# in fb-reader is bypassed).
 # fb-reader points at `http://gx10.local:{{ vllm_port }}/v1/chat/completions`.
 vllm_user: "devjoe"
 vllm_workdir: "/home/devjoe/Projects/vllm"
@@ -69,19 +66,25 @@ vllm_workdir: "/home/devjoe/Projects/vllm"
 vllm_host: "0.0.0.0"
 vllm_port: 8000
 
-# Model + serving knobs.
-vllm_model: "Qwen/Qwen3.6-35B-A3B-AWQ"
-vllm_served_name: "qwen3.6:35b-a3b"
-vllm_max_model_len: 16384
-vllm_gpu_memory_utilization: "0.85"
-vllm_max_images_per_prompt: 4
+# Model + serving knobs (per Intel AutoRound recipe).
+vllm_model: "Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound"
+vllm_served_name: "qwen3.6-35b"
+vllm_max_model_len: 131072
+vllm_max_num_batched_tokens: 32768
+vllm_max_num_seqs: 4
+# Recipe defaults to 0.8, but DGX Ollama keeps ~32GB GPU mem warm
+# (qwen3.6:35b-a3b at keep_alive=24h). 0.65 leaves room for both;
+# bump back to 0.8 if Ollama gets evicted from the box.
+vllm_gpu_memory_utilization: "0.65"
+vllm_quantization: "gptq"
+
+# Speculative decoding (DFlash). num_tokens=8 = recipe's "k=8".
+vllm_speculative_model: "z-lab/Qwen3.6-35B-A3B-DFlash"
+vllm_speculative_num_tokens: 8
 
 # Floor versions — bump deliberately when A/B testing a newer release.
-# Even with client-side re-encode, recent Pillow / transformers ship
-# defensive fixes worth keeping the floor on.
 vllm_version_floor: "0.7.0"
 vllm_transformers_floor: "4.46.0"
-vllm_pillow_floor: "11.0.0"
 
 # --- Observability stack (roles/observability/) ----------------------------
 # Activated by playbooks/deploy-observability.yml. Defaults live in

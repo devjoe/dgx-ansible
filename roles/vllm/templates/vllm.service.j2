@@ -3,7 +3,7 @@
 # Do not hand-edit — `make deploy` overwrites this file.
 
 [Unit]
-Description=vLLM Tier B daemon (qwen3.6:35b-a3b MoE-AWQ-4bit)
+Description=vLLM Tier B daemon ({{ vllm_model }} + DFlash k={{ vllm_speculative_num_tokens }})
 After=network-online.target
 Wants=network-online.target
 
@@ -14,17 +14,29 @@ Group={{ vllm_user }}
 WorkingDirectory={{ vllm_workdir }}
 Environment="HF_HUB_ENABLE_HF_TRANSFER=1"
 Environment="VLLM_LOGGING_LEVEL=INFO"
-# Bind directly to the LAN — fb-reader's content script does its own
-# image fetch + JPEG re-encode, so no sanitizer proxy is needed.
+# Recipe envs (Intel AutoRound + DFlash profile).
+Environment="HF_HUB_OFFLINE=1"
+Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
 ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
     --host {{ vllm_host }} \
     --port {{ vllm_port }} \
     --served-model-name {{ vllm_served_name }} \
+    --language-model-only \
     --max-model-len {{ vllm_max_model_len }} \
+    --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} \
+    --max-num-seqs {{ vllm_max_num_seqs }} \
     --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} \
-    --quantization awq_marlin \
+    --load-format fastsafetensors \
+    --attention-backend flash_attn \
+    --enable-prefix-caching \
+    --enable-chunked-prefill \
     --trust-remote-code \
-    --limit-mm-per-prompt 'image={{ vllm_max_images_per_prompt }}'
+    --quantization {{ vllm_quantization }} \
+    --reasoning-parser qwen3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --default-chat-template-kwargs '{"preserve_thinking":true}' \
+    --speculative-config '{"method":"dflash","model":"{{ vllm_speculative_model }}","num_speculative_tokens":{{ vllm_speculative_num_tokens }}}'
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=600
