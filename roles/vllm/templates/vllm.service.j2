@@ -21,7 +21,11 @@ ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
     --host {{ vllm_host }} \
     --port {{ vllm_port }} \
     --served-model-name {{ vllm_served_name }} \
+{% if vllm_language_model_only %}
     --language-model-only \
+{% else %}
+    --limit-mm-per-prompt '{"image":{{ vllm_max_images_per_prompt }}}' \
+{% endif %}
     --max-model-len {{ vllm_max_model_len }} \
     --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} \
     --max-num-seqs {{ vllm_max_num_seqs }} \
