@@ -72,10 +72,9 @@ vllm_served_name: "qwen3.6-35b"
 vllm_max_model_len: 131072
 vllm_max_num_batched_tokens: 32768
 vllm_max_num_seqs: 4
-# Recipe defaults to 0.8, but DGX Ollama keeps ~32GB GPU mem warm
-# (qwen3.6:35b-a3b at keep_alive=24h). 0.65 leaves room for both;
-# bump back to 0.8 if Ollama gets evicted from the box.
-vllm_gpu_memory_utilization: "0.65"
+# Ollama evicted from DGX 2026-05-05; vLLM now has exclusive GPU access.
+# 0.85 gives vLLM ~104 GB of 121 GB unified memory for KV cache.
+vllm_gpu_memory_utilization: "0.85"
 vllm_quantization: "gptq"
 
 # Multimodal toggle. Recipe says --language-model-only (text + DFlash spec
