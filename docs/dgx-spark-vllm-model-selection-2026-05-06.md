@@ -8,109 +8,107 @@ Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 2. Is fast/stable enough for **fb-reader Tier B** (zh-TW JSON, occasional vision).
 3. Has a practical, repeatable deployment recipe (no one-off hand edits).
 
-This doc is evidence-driven. It points to public GB10 measurements and captures
-the exact flags needed to reproduce them in our `dgx-ansible` systemd service.
+This doc is **local-evidence driven**: all key decisions below are based on
+captured Tier B traffic + replayed benchmarks, not synthetic tok/s only.
 
-## Candidates (2026-05)
+## Benchmark Method (Realistic Tier B Replay)
 
-### A. Qwen3.6 35B-A3B FP8 (recommended default)
+1. Capture 50 real FB posts via `fb-reader` remote debug:
+   - Output: `~/Projects/fb-reader/tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json`
+   - 40/50 cases contain images (data-URI JPEGs).
+2. Replay the corpus against DGX vLLM:
+   - `make replay-tier-b-corpus` (curl transport)
+   - Output: `~/Projects/fb-reader/tmp/tier-b-replay/*.json`
 
-Why it fits the combined goal:
+Metrics used:
+- JSON parse + schema checks (must be stable)
+- latency p50/p90 (all / image-only / text-only)
 
-- Strong “agentic coding” profile (OpenCode target).
-- Native 262K context target.
-- Proven working tool-call / reasoning parsers in vLLM.
-- Community GB10 numbers show **~70–78 tok/s** decode at large contexts.
+## Results (2026-05-06 Corpus)
 
-Evidence (GB10):
-- NVIDIA forum thread with `llama-benchy` numbers and a working `vllm serve`
-  command for `Qwen/Qwen3.6-35B-A3B-FP8` (includes context up to 131072 with
-  tg128 ~64 tok/s). citeturn3view1
+All runs: 50/50 HTTP success, no timeouts.
 
-Suggested vLLM serve shape (single Spark):
+### A0. Intel/Qwen3.6 AutoRound INT4 + DFlash (k=8), max_model_len=131072
 
-- `vllm_model: Qwen/Qwen3.6-35B-A3B-FP8`
-- `--kv-cache-dtype fp8`
-- `--attention-backend flashinfer` (Blackwell prefers FlashInfer)
-- `--max-model-len 262144`
-- `--enable-prefix-caching --enable-chunked-prefill`
+Result file:
+- `fb-reader/tmp/tier-b-replay/expA0-intel-dflash-1778056034.json`
 
-Notes:
-- You can add speculative decoding (MTP or DFlash) later, but FP8 baseline is
-  already fast and operationally simpler than pre-merge PR stacks.
+Latency:
+- all: p50 4.71s, p90 9.78s
+- image: p50 4.94s, p90 10.54s
+- text: p50 3.09s, p90 3.51s
 
-### B. Gemma 4 26B-A4B NVFP4 + assistant MTP (high-upside, higher moving parts)
+Stability:
+- parse_ok 49/50, schema_ok 49/50
+- 1 case hit `max_tokens=600` and got truncated.
 
-Why it’s interesting:
-- Same 256K context class.
-- Very strong long-context + multimodal (helpful for fb-reader’s image-heavy posts).
-- New assistant (“-assistant”) models can provide large decoding speedups.
+### A1. Same model, Speculative OFF (no DFlash), max_model_len=131072
 
-Evidence (GB10):
-- NVIDIA forum post reporting **mean acceptance length 3.68/4**, **67–69%**
-  acceptance, and speedups like **2.34x** wall (sequential ×3) and **~175 tok/s
-  peak aggregate throughput** for NVFP4 target + BF16 assistant. citeturn4view3
+Result file:
+- `fb-reader/tmp/tier-b-replay/expA1-intel-no-spec-1778057621.json`
 
-Operational caveat:
-- As of 2026-05-06, this path may require vLLM PR head + Transformers main to
-  recognize `gemma4_assistant` (until upstream releases land). The forum thread
-  includes the “works today” recipe. citeturn0search1turn1search3
+Latency:
+- all: p50 7.96s, p90 14.50s
+- image: p50 8.06s, p90 15.49s
+- text: p50 5.96s, p90 6.99s
 
-### C. Intel AutoRound INT4 Qwen3.6 + DFlash (current deployed)
+Takeaway:
+- DFlash improves p50 by ~1.7x on this workload (including image cases).
 
-Why it exists:
-- Easy to fit + fast enough for Tier B.
-- DFlash can yield substantial latency improvements, but the win is workload-
-  dependent and may require very specific vLLM builds in some periods.
+### B0. cklaus/gemma-4-26B-A4B-it-NVFP4 (modelopt), attention_backend=auto
 
-Evidence / reference:
-- DFlash model card includes a vLLM launch example and reports up to ~2.9x
-  speedup on some tasks (different hardware; still a useful reference). citeturn11view0
+Operational note:
+- Gemma4 NVFP4 needs `ninja` for torch.compile on this stack.
+  We installed `ninja-build` in the vLLM role.
 
-## Recommendation (single-model default)
+Result file:
+- `fb-reader/tmp/tier-b-replay/expB0-gemma4-nvfp4-1778062122.json`
 
-Start with **Qwen/Qwen3.6-35B-A3B-FP8** as the shared DGX model for both
-fb-reader Tier B and OpenCode.
+Latency:
+- all: p50 12.49s, p90 17.27s
+- image: p50 12.92s, p90 17.62s
+- text: p50 9.52s, p90 10.19s
 
-Rationale:
-- It directly optimizes for OpenCode’s “coding first” workload.
-- It retains long-context headroom (262K).
-- The GB10 decode numbers are already strong without needing a pre-merge PR
-  stack. citeturn3view1
+Takeaway:
+- Much slower than Qwen+DFlash for Tier B classification.
 
-Keep Gemma4+assistant as an experimental branch: it may become the best
-“fast multimodal” choice once vLLM + Transformers land clean releases.
+### A2. Intel/Qwen3.6 AutoRound INT4 + DFlash, max_model_len=262144 (OpenCode-capable)
 
-## How to apply (in this repo)
+Result file:
+- `fb-reader/tmp/tier-b-replay/expA2-intel-dflash-262k-1778063245.json`
 
-`group_vars/dgx.yml` is the single source of truth.
+Latency:
+- all: p50 4.97s, p90 11.61s
+- image: p50 5.22s, p90 12.02s
+- text: p50 3.10s, p90 3.98s
 
-For Qwen3.6 FP8, set:
+Takeaway:
+- 262K ceiling works and does not break Tier B, but p90 moved a bit (restart
+  warmup / cache effects likely; rerun for a tighter confidence interval).
 
-- `vllm_model: Qwen/Qwen3.6-35B-A3B-FP8`
-- `vllm_quantization: ""` (or `fp8` if your vLLM build expects it)
-- `vllm_attention_backend: "flashinfer"`
-- `vllm_kv_cache_dtype: "fp8"`
-- `vllm_max_model_len: 262144`
-- `vllm_max_num_batched_tokens: 16384` (then tune upward if safe)
-- `vllm_reasoning_parser: "qwen3"`
-- `vllm_tool_call_parser: "qwen3_coder"`
-- `vllm_speculative_config: ""` (baseline first; add later if desired)
+## Recommendation (Single Shared vLLM Default)
 
-Then:
+Use **Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound + DFlash (k=8)** with:
+
+- `max_model_len: 262144` (OpenCode long-context headroom)
+- `max_num_batched_tokens: 32768` (chunked prefill)
+- `attention_backend: flash_attn` (FlashInfer breaks on non-causal/multimodal paths for this stack)
+- `speculative_config: dflash k=8` (big latency win on this workload)
+
+Gemma4 NVFP4 is not a good Tier B default today on this workload (latency).
+
+## How to Apply (in This Repo)
+
+`group_vars/dgx.yml` is the single source of truth:
 
 ```bash
 make deploy
 make status-vllm
-python3 scripts/run_vllm_classification.py --connect-mode auto
 ```
 
-## What we still need to measure locally
+For Tier B replay:
 
-Public GB10 numbers are a good filter, but we still need “our workload” A/Bs:
-
-1. OpenCode: long prompt + tool-use-ish code edits (TTFT + tok/s).
-2. fb-reader Tier B: 10–20 real fixtures (zh-TW + images) for correctness +
-   latency under realistic `max_tokens=600`.
-3. Concurrency: ensure we don’t regress interactive p50 while improving batch.
-
+```bash
+cd ~/Projects/fb-reader
+CORPUS=tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json make replay-tier-b-corpus
+```

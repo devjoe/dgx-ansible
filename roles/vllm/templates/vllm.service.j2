@@ -17,44 +17,11 @@ Environment="VLLM_LOGGING_LEVEL=INFO"
 # Recipe envs (defaults tuned for the current Qwen3.6 AutoRound profile).
 Environment="HF_HUB_OFFLINE={{ (vllm_hf_hub_offline | default(true)) | ternary('1','0') }}"
 Environment="VLLM_MARLIN_USE_ATOMIC_ADD={{ (vllm_marlin_use_atomic_add | default(true)) | ternary('1','0') }}"
-ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
-    --host {{ vllm_host }} \
-    --port {{ vllm_port }} \
-    --served-model-name {{ vllm_served_name }} \
-{% if vllm_language_model_only %}
-    --language-model-only \
-{% else %}
-    --limit-mm-per-prompt '{"image":{{ vllm_max_images_per_prompt }}}' \
-{% endif %}
-    --max-model-len {{ vllm_max_model_len }} \
-    --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} \
-    --max-num-seqs {{ vllm_max_num_seqs }} \
-    --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} \
-    --load-format {{ vllm_load_format | default('fastsafetensors') }} \
-    --attention-backend {{ vllm_attention_backend | default('flash_attn') }} \
-    --enable-prefix-caching \
-    --enable-chunked-prefill \
-    --trust-remote-code \
-    --quantization {{ vllm_quantization }} \
-    --reasoning-parser {{ vllm_reasoning_parser | default('qwen3') }} \
-    --enable-auto-tool-choice \
-    --tool-call-parser {{ vllm_tool_call_parser | default('qwen3_coder') }} \
-    --default-chat-template-kwargs '{{ vllm_default_chat_template_kwargs | default("{\"preserve_thinking\":true}") }}' \
-{% if (vllm_kv_cache_dtype | default('')) | length > 0 %}
-    --kv-cache-dtype {{ vllm_kv_cache_dtype }} \
-{% endif %}
-{% if (vllm_dtype | default('')) | length > 0 %}
-    --dtype {{ vllm_dtype }} \
-{% endif %}
-{% if (vllm_extra_args | default('')) | length > 0 %}
-    {{ vllm_extra_args }} \
-{% endif %}
-{% if (vllm_speculative_config | default('')) | length > 0 %}
-    --speculative-config '{{ vllm_speculative_config }}'
-{% endif %}
+ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} --host {{ vllm_host }} --port {{ vllm_port }} --served-model-name {{ vllm_served_name }} {% if vllm_language_model_only %}--language-model-only{% else %}--limit-mm-per-prompt '{"image":{{ vllm_max_images_per_prompt }}}'{% endif %} --max-model-len {{ vllm_max_model_len }} --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} --max-num-seqs {{ vllm_max_num_seqs }} --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} --load-format {{ vllm_load_format | default('fastsafetensors') }} --attention-backend {{ vllm_attention_backend | default('flash_attn') }} --enable-prefix-caching --enable-chunked-prefill --trust-remote-code{% if (vllm_quantization | default('')) | length > 0 %} --quantization {{ vllm_quantization }}{% endif %} --reasoning-parser {{ vllm_reasoning_parser | default('qwen3') }} --enable-auto-tool-choice --tool-call-parser {{ vllm_tool_call_parser | default('qwen3_coder') }} --default-chat-template-kwargs '{{ vllm_default_chat_template_kwargs | default("{\"preserve_thinking\":true}") }}'{% if (vllm_kv_cache_dtype | default('')) | length > 0 %} --kv-cache-dtype {{ vllm_kv_cache_dtype }}{% endif %}{% if (vllm_dtype | default('')) | length > 0 %} --dtype {{ vllm_dtype }}{% endif %}{% if (vllm_extra_args | default('')) | length > 0 %} {{ vllm_extra_args }}{% endif %}{% if (vllm_speculative_config | default('')) | length > 0 %} --speculative-config '{{ vllm_speculative_config }}'{% endif %}
+
 Restart=on-failure
 RestartSec=10
-TimeoutStartSec=600
+TimeoutStartSec={{ vllm_timeout_start_sec | default(3600) }}
 
 [Install]
 WantedBy=multi-user.target

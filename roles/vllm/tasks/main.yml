@@ -23,6 +23,7 @@
       # C extension needs Python.h.
       - python3-dev
       - build-essential
+      - ninja-build
     state: present
     update_cache: true
 
@@ -90,7 +91,10 @@
   ansible.builtin.uri:
     url: "http://localhost:{{ vllm_port }}/v1/models"
     return_content: true
+    timeout: 3
   register: vllm_health
-  retries: 30
+  # Model (re)loads can take several minutes on GB10 depending on weight
+  # format, KV cache profile, and whether caches are warm.
+  retries: 180
   delay: 5
   until: vllm_health.status == 200

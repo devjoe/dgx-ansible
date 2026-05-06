@@ -18,7 +18,7 @@ Stop after #1 unless the task needs more:
 3. **`roles/{ollama,vllm,benchmark}/tasks/main.yml`** — what `make deploy` and
    `make benchmark` actually execute, in order.
 4. **`docs/dgx-spark-vllm-model-selection-2026-05-06.md`** — pick the best
-   shared DGX vLLM model for fb-reader + OpenCode (Qwen3.6 FP8 vs Gemma4+assistant).
+   shared DGX vLLM model for fb-reader + OpenCode (Tier B replay evidence).
 5. **`docs/handover-prismaquant.md`** — paused investigation into a
    95 tok/s PrismaQuant + DFlash config. Read only if reviving that thread.
 
@@ -30,7 +30,7 @@ to `~/Projects/local-inference/README.md`.
 | | Tier A (Ollama) | Tier B (vLLM) |
 |---|---|---|
 | Endpoint | `gx10.local:11434` | `gx10.local:8000` |
-| Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash) |
+| Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash, max_model_len=262144) |
 | Role | text classification fallback / quality backstop | multimodal Tier B classifier |
 | Service unit | `ollama` (systemd) | `vllm` (systemd) |
 | Image handling | n/a | client-side prefetch in fb-reader → `data:image/jpeg;base64,...` |

@@ -67,9 +67,10 @@ vllm_host: "0.0.0.0"
 vllm_port: 8000
 
 # Model + serving knobs (per Intel AutoRound recipe).
+# Back to the current best Tier B baseline (fast): Intel AutoRound INT4 + DFlash.
 vllm_model: "Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound"
 vllm_served_name: "qwen3.6-35b"
-vllm_max_model_len: 131072
+vllm_max_model_len: 262144
 vllm_max_num_batched_tokens: 32768
 vllm_max_num_seqs: 4
 # Ollama evicted from DGX 2026-05-05; vLLM now has exclusive GPU access.
