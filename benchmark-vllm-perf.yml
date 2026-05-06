@@ -1,0 +1,68 @@
+---
+# Performance benchmark for the vLLM Tier B daemon.
+#
+# Runs vLLM's built-in benchmark client against the local OpenAI-compatible
+# endpoint. This is a read-only measurement playbook.
+#
+# Usage:
+#   make ping
+#   ansible-playbook -i inventory.ini benchmark-vllm-perf.yml
+#
+# Notes:
+# - This measures server behaviour on the DGX itself (no client-side LAN noise).
+# - It does not attempt model swaps; change `group_vars/dgx.yml` then `make deploy`.
+
+- name: Benchmark vLLM throughput/latency on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    base_url: "http://localhost:{{ vllm_port }}/v1"
+    model: "{{ vllm_served_name }}"
+    # Small decode length aligned with fb-reader Tier B (max_tokens=600).
+    # We benchmark a smaller slice for speed + reproducibility.
+    out_lens: [128, 512]
+    # Prefill lengths to sample. Keep <= max_num_batched_tokens to avoid
+    # artificially inducing batching backpressure.
+    in_lens: [2048, 8192, 32768]
+    concurrencies: [1, 4, 8]
+  tasks:
+    - name: Show benchmark target
+      ansible.builtin.debug:
+        msg:
+          - "base_url={{ base_url }}"
+          - "model={{ model }}"
+          - "in_lens={{ in_lens }}"
+          - "out_lens={{ out_lens }}"
+          - "concurrency={{ concurrencies }}"
+
+    - name: Ensure vLLM responds
+      ansible.builtin.uri:
+        url: "{{ base_url }}/models"
+        return_content: true
+      register: models
+
+    - name: Show served models
+      ansible.builtin.debug:
+        msg: "{{ models.json.data | map(attribute='id') | list }}"
+
+    - name: Run vLLM bench serve matrix
+      ansible.builtin.command:
+        cmd: >-
+          {{ vllm_workdir }}/.venv/bin/vllm bench serve
+          --backend openai-chat
+          --base-url {{ base_url }}
+          --model {{ model }}
+          --temperature 0
+          --num-prompts 30
+          --ignore-eos
+          --output-lens {{ out_lens | join(',') }}
+          --input-lens {{ in_lens | join(',') }}
+          --concurrency {{ concurrencies | join(',') }}
+      register: bench
+      changed_when: false
+
+    - name: Print bench output
+      ansible.builtin.debug:
+        var: bench.stdout_lines
+

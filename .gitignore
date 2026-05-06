@@ -17,3 +17,4 @@ group_vars/local.yml
 # Untracked working dirs
 scratch/
 .archive/
+.claude/

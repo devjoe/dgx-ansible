@@ -3,7 +3,7 @@
 # Do not hand-edit — `make deploy` overwrites this file.
 
 [Unit]
-Description=vLLM Tier B daemon ({{ vllm_model }} + DFlash k={{ vllm_speculative_num_tokens }})
+Description=vLLM Tier B daemon ({{ vllm_served_name | default(vllm_model) }})
 After=network-online.target
 Wants=network-online.target
 
@@ -14,9 +14,9 @@ Group={{ vllm_user }}
 WorkingDirectory={{ vllm_workdir }}
 Environment="HF_HUB_ENABLE_HF_TRANSFER=1"
 Environment="VLLM_LOGGING_LEVEL=INFO"
-# Recipe envs (Intel AutoRound + DFlash profile).
-Environment="HF_HUB_OFFLINE=1"
-Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
+# Recipe envs (defaults tuned for the current Qwen3.6 AutoRound profile).
+Environment="HF_HUB_OFFLINE={{ (vllm_hf_hub_offline | default(true)) | ternary('1','0') }}"
+Environment="VLLM_MARLIN_USE_ATOMIC_ADD={{ (vllm_marlin_use_atomic_add | default(true)) | ternary('1','0') }}"
 ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
     --host {{ vllm_host }} \
     --port {{ vllm_port }} \
@@ -30,17 +30,28 @@ ExecStart={{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
     --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} \
     --max-num-seqs {{ vllm_max_num_seqs }} \
     --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} \
-    --load-format fastsafetensors \
-    --attention-backend flash_attn \
+    --load-format {{ vllm_load_format | default('fastsafetensors') }} \
+    --attention-backend {{ vllm_attention_backend | default('flash_attn') }} \
     --enable-prefix-caching \
     --enable-chunked-prefill \
     --trust-remote-code \
     --quantization {{ vllm_quantization }} \
-    --reasoning-parser qwen3 \
+    --reasoning-parser {{ vllm_reasoning_parser | default('qwen3') }} \
     --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder \
-    --default-chat-template-kwargs '{"preserve_thinking":true}' \
-    --speculative-config '{"method":"dflash","model":"{{ vllm_speculative_model }}","num_speculative_tokens":{{ vllm_speculative_num_tokens }}}'
+    --tool-call-parser {{ vllm_tool_call_parser | default('qwen3_coder') }} \
+    --default-chat-template-kwargs '{{ vllm_default_chat_template_kwargs | default("{\"preserve_thinking\":true}") }}' \
+{% if (vllm_kv_cache_dtype | default('')) | length > 0 %}
+    --kv-cache-dtype {{ vllm_kv_cache_dtype }} \
+{% endif %}
+{% if (vllm_dtype | default('')) | length > 0 %}
+    --dtype {{ vllm_dtype }} \
+{% endif %}
+{% if (vllm_extra_args | default('')) | length > 0 %}
+    {{ vllm_extra_args }} \
+{% endif %}
+{% if (vllm_speculative_config | default('')) | length > 0 %}
+    --speculative-config '{{ vllm_speculative_config }}'
+{% endif %}
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=600

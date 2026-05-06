@@ -76,6 +76,20 @@ vllm_max_num_seqs: 4
 # 0.85 gives vLLM ~104 GB of 121 GB unified memory for KV cache.
 vllm_gpu_memory_utilization: "0.85"
 vllm_quantization: "gptq"
+vllm_load_format: "fastsafetensors"
+vllm_attention_backend: "flash_attn"
+vllm_dtype: ""
+vllm_kv_cache_dtype: ""
+vllm_extra_args: ""
+
+# Parser knobs (match the served model family).
+vllm_reasoning_parser: "qwen3"
+vllm_tool_call_parser: "qwen3_coder"
+vllm_default_chat_template_kwargs: '{"preserve_thinking":true}'
+
+# Hub / kernel toggles.
+vllm_hf_hub_offline: true
+vllm_marlin_use_atomic_add: true
 
 # Multimodal toggle. Recipe says --language-model-only (text + DFlash spec
 # decode). Set false to ALSO load the vision tower — DFlash drafter is
@@ -86,6 +100,7 @@ vllm_max_images_per_prompt: 4
 # Speculative decoding (DFlash). num_tokens=8 = recipe's "k=8".
 vllm_speculative_model: "z-lab/Qwen3.6-35B-A3B-DFlash"
 vllm_speculative_num_tokens: 8
+vllm_speculative_config: '{"method":"dflash","model":"z-lab/Qwen3.6-35B-A3B-DFlash","num_speculative_tokens":8}'
 
 # Floor versions — bump deliberately when A/B testing a newer release.
 vllm_version_floor: "0.7.0"

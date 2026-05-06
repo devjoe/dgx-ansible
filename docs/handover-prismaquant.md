@@ -4,7 +4,7 @@ This document captures the status of the investigation into running PrismaQuant 
 
 ## Current Status
 - **Investigation Paused**: 2026-05-04.
-- **Stable State**: System is running `Qwen/Qwen3.6-35B-A3B-AWQ` via vLLM (systemd mode).
+- **Stable State**: System is running `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash) via vLLM (systemd mode).
 - **Network**: Wi-Fi `10Design2` was enabled on DGX to restore internet access. IPv6 was temporarily disabled to fix download stalls.
 
 ## PrismaQuant Findings

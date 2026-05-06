@@ -38,16 +38,25 @@
   changed_when: false
   become_user: "{{ vllm_user }}"
 
-# Pin floor versions so we can bump deliberately.
-- name: Install / upgrade vLLM, transformers
+# Pin floor versions so we can bump deliberately. Can be overridden for
+# pre-merge PR testing (e.g. Gemma4 MTP assistants).
+- name: Install / upgrade vLLM stack
   ansible.builtin.pip:
-    name:
-      - "vllm>={{ vllm_version_floor }}"
-      - "transformers>={{ vllm_transformers_floor }}"
+    name: "{{ vllm_pip_packages | default([('vllm>=' + vllm_version_floor), ('transformers>=' + vllm_transformers_floor)]) }}"
     virtualenv: "{{ vllm_workdir }}/.venv"
     state: latest
     extra_args: "--upgrade-strategy eager"
   become_user: "{{ vllm_user }}"
+  notify: restart vllm
+
+- name: Optionally install InstantTensor for faster weight loading
+  ansible.builtin.pip:
+    name:
+      - instanttensor
+    virtualenv: "{{ vllm_workdir }}/.venv"
+    state: latest
+  become_user: "{{ vllm_user }}"
+  when: vllm_load_format | default('') == 'instanttensor'
   notify: restart vllm
 
 - name: Render vllm.service

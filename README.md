@@ -17,22 +17,24 @@ Stop after #1 unless the task needs more:
    want to change something, edit here, then `make deploy`.
 3. **`roles/{ollama,vllm,benchmark}/tasks/main.yml`** — what `make deploy` and
    `make benchmark` actually execute, in order.
-4. **`docs/handover-prismaquant.md`** — paused investigation into a
+4. **`docs/dgx-spark-vllm-model-selection-2026-05-06.md`** — pick the best
+   shared DGX vLLM model for fb-reader + OpenCode (Qwen3.6 FP8 vs Gemma4+assistant).
+5. **`docs/handover-prismaquant.md`** — paused investigation into a
    95 tok/s PrismaQuant + DFlash config. Read only if reviving that thread.
 
 For Mac-side config, model-choice rationale, or cross-endpoint benchmarks, go
 to `~/Projects/local-inference/README.md`.
 
-## Current state (2026-05-04)
+## Current state (2026-05-06)
 
 | | Tier A (Ollama) | Tier B (vLLM) |
 |---|---|---|
 | Endpoint | `gx10.local:11434` | `gx10.local:8000` |
-| Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Qwen/Qwen3.6-35B-A3B-AWQ` |
+| Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash) |
 | Role | text classification fallback / quality backstop | multimodal Tier B classifier |
 | Service unit | `ollama` (systemd) | `vllm` (systemd) |
 | Image handling | n/a | client-side prefetch in fb-reader → `data:image/jpeg;base64,...` |
-| Speed flags | `FLASH_ATTENTION=0`, `KV_CACHE_TYPE=fp16` | AWQ-Marlin, `gpu-memory-utilization=0.85` |
+| Speed flags | `FLASH_ATTENTION=0`, `KV_CACHE_TYPE=fp16` | Marlin atomic add, `gpu-memory-utilization=0.85` |
 | Keep-alive | `OLLAMA_KEEP_ALIVE=24h` | n/a (vLLM holds the model in VRAM permanently) |
 
 The image-sanitizing proxy (`vllm-sanitizer`) was **removed 2026-04** in commit
@@ -88,11 +90,28 @@ make status                # GET /api/ps (Ollama loaded models)
 make status-vllm           # systemctl is-active vllm + GET /v1/models
 make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
+make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
 make unload                # POST keep_alive:0 to free VRAM
 make lint                  # ansible --syntax-check on all playbooks
 make deploy-obs            # stand up obs stack (needs .vault_pass + dgx.yml.vault)
 make status-obs            # systemctl state of every observability unit
 make canary-once           # trigger the obs canary service immediately
+```
+
+## vLLM speed spot-check (Mac-side)
+
+For a quick latency sanity check from your Mac, use the bundled script:
+
+```bash
+python3 scripts/run_vllm_classification.py --api-base http://gx10.local:8000/v1 --model qwen3.6-35b
+```
+
+If you see a suspicious ~5s fixed latency per request, it is usually a
+client-side networking issue (macOS/Python routing differences between IPv4
+and IPv6 for `.local` hostnames). Retry:
+
+```bash
+python3 scripts/run_vllm_classification.py --connect-mode auto
 ```
 
 `ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on
