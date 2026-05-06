@@ -72,6 +72,67 @@ Latency:
 Takeaway:
 - Much slower than Qwen+DFlash for Tier B classification.
 
+### B1. RedHatAI Gemma4 26B-A4B-it FP8 + Google MTP, max_model_len=262144
+
+Result file:
+- `fb-reader/tmp/tier-b-replay/expB1-redhat-gemma4-fp8-it-mtp-262k-1778091460.json`
+
+Runtime:
+- Docker image: `vllm/vllm-openai:gemma4-0505-cu130`
+- Patched MTP implementation bind-mounted from vLLM PR #41745 head SHA
+  `d8b3826648da6b407f8c55457a2103be9aeb5d83`.
+- target: `RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
+- assistant: `google/gemma-4-26B-A4B-it-assistant`
+- `speculative_config`: `{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}`
+- `kv_cache_dtype=fp8`, `gpu_memory_utilization=0.55`,
+  `max_num_batched_tokens=16384`, CUDA graphs enabled.
+
+Latency:
+- all: p50 7.00s, p90 9.97s
+- image: p50 7.54s, p90 10.73s
+- text: p50 5.25s, p90 7.19s
+
+Stability:
+- parse_ok 50/50, schema_ok 50/50
+- 50/50 HTTP success, no timeouts.
+
+Operational observations:
+- 262K + CUDA graphs reached `/v1/models` successfully.
+- Checkpoint size: 26.67 GiB.
+- Model loading memory: 26.58 GiB.
+- Available KV cache: 33.22 GiB.
+- GPU KV cache size: 2,092,288 tokens.
+- vLLM-estimated max concurrency for 262,144-token requests: 7.98x.
+- Cold start was expensive:
+  - target download: 890s on first run
+  - target weight load: 234s
+  - engine profile / compile / warmup: 141s
+  - multimodal warmup: 38s
+- vLLM warned: draft model does not support multimodal inputs, so it falls
+  back to text-only mode. Practically, the Gemma target handles image prefill;
+  MTP helps mostly during text decoding.
+- vLLM also warned that the GB10 FP8 MoE tuning config was missing:
+  `E=128,N=704,device_name=NVIDIA_GB10,dtype=fp8_w8a8.json`. Performance may
+  improve when upstream ships or we generate that config.
+- During replay, MTP acceptance was healthy but variable:
+  - mean acceptance length roughly 3.1-4.4 tokens
+  - average draft acceptance rate roughly 53-86%, commonly around 60-74%
+
+Takeaway:
+- This is a large improvement over Gemma4 NVFP4 no-MTP:
+  - p50 12.37s -> 7.00s
+  - p90 17.24s -> 9.97s
+  - image p90 17.60s -> 10.73s
+- It is still slower than Qwen DFlash on median latency:
+  - Qwen all p50 4.96s vs Gemma FP8-it MTP 7.00s
+  - Qwen image p50 5.22s vs Gemma FP8-it MTP 7.54s
+- It is competitive on tail latency in this one run:
+  - Qwen all p90 11.57s vs Gemma FP8-it MTP 9.97s
+  - Qwen image p90 11.99s vs Gemma FP8-it MTP 10.73s
+- Because fb-reader requests are short-output and often image-heavy, the
+  public pure-text MTP tok/s headline does not translate directly into a Tier B
+  win. Gemma FP8-it MTP is now a serious candidate, but not yet the default.
+
 ### A2. Intel/Qwen3.6 AutoRound INT4 + DFlash, max_model_len=262144 (OpenCode-capable)
 
 Result file:
@@ -96,6 +157,10 @@ Use **Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound + DFlash (k=8)** with:
 - `speculative_config: dflash k=8` (big latency win on this workload)
 
 Gemma4 NVFP4 is not a good Tier B default today on this workload (latency).
+Gemma4 FP8-it + MTP is much better and should stay on the candidate list, but
+does not yet replace Qwen as the single shared default because median latency
+is still worse, the serving path requires a preview Docker image plus a patched
+MTP file, and the assistant is text-only for multimodal requests.
 
 ## Gemma4 MTP Follow-up (2026-05-07)
 
@@ -127,6 +192,13 @@ Key facts from the 2026-05-07 check:
   - `--max-num-batched-tokens 16384`
   - `--enforce-eager`
   - `--no-enable-flashinfer-autotune`
+- A later community report showed a faster instruction-tuned FP8 path:
+  - target: `RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
+  - assistant: `google/gemma-4-26B-A4B-it-assistant`
+  - patched `gemma4_mtp.py` from PR #41745 is required for quantized targets
+    because the preview image was built before the `intermediate_size` and
+    draft `quant_config` fixes.
+  - reference: https://ai-muninn.com/en/blog/dgx-spark-gemma4-mtp-108-toks
 
 Experiment protocol:
 1. Stop the systemd `vllm` service temporarily.
@@ -204,13 +276,26 @@ Outcome:
 - Stable service was restored to
   `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound + DFlash`, `max_model_len=262144`.
 
-Next viable MTP step:
-- Pre-download `nvidia/Gemma-4-26B-A4B-NVFP4` outside the vLLM server process
-  with a resumable HF download path (prefer authenticated HF token / higher rate
-  limits).
-- Retry the same Docker recipe only after the target cache is complete.
-- If the nvidia target remains hard to fetch, test a matched FP8 pair instead
-  (for example a target/assistant pair from the same publisher/family).
+Attempt 3: `RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic` target + Google assistant
+
+Observed:
+- Patched `gemma4_mtp.py` from PR head SHA
+  `d8b3826648da6b407f8c55457a2103be9aeb5d83` fixed the quantized-target
+  shape mismatch seen in the earlier `cklaus` attempt.
+- Server successfully reached `/v1/models` with 262K context and CUDA graphs.
+- Stable Qwen service was restored after the replay.
+
+Result:
+- See B1 above. Gemma FP8-it MTP is a real candidate now, especially for
+  image-heavy tail latency, but Qwen DFlash remains the stable default.
+
+Next viable MTP steps:
+- Rerun B1 once warm, now that the model and torch compile cache are present,
+  to remove cold JIT artifacts from the first replay.
+- Test an OpenCode-style corpus separately; the current evidence is Tier B
+  fb-reader replay, not repo-editing quality/latency.
+- Investigate GB10 FP8 MoE tuning config generation for Gemma4:
+  `E=128,N=704,device_name=NVIDIA_GB10,dtype=fp8_w8a8.json`.
 
 ## How to Apply (in This Repo)
 
