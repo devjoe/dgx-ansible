@@ -1,0 +1,37 @@
+---
+# Stop services that can interfere with a DGX Spark OS / firmware update.
+# This intentionally does not run apt, firmware updates, or reboot.
+
+- name: Stop DGX services before manual OS update
+  hosts: dgx
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop canary timer first
+      ansible.builtin.systemd:
+        name: observability-canary.timer
+        state: stopped
+      failed_when: false
+
+    - name: Stop inference services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - vllm
+        - ollama
+      failed_when: false
+
+    - name: Show service state after stop
+      ansible.builtin.shell: |
+        for unit in vllm ollama observability-canary.timer; do
+          printf "%s " "$unit"
+          systemctl is-active "$unit" 2>/dev/null || true
+        done
+      register: stopped_units
+      changed_when: false
+
+    - name: Stop summary
+      ansible.builtin.debug:
+        var: stopped_units.stdout_lines
+

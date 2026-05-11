@@ -1,0 +1,98 @@
+---
+# Read-only snapshot before a DGX Spark OS / firmware update.
+
+- name: DGX OS update preflight
+  hosts: dgx
+  become: false
+  gather_facts: true
+  vars:
+    snapshot_dir: "{{ remote_workdir | default('/home/devjoe/Projects/Ollama') }}/os-update"
+  tasks:
+    - name: Ensure snapshot directory exists
+      ansible.builtin.file:
+        path: "{{ snapshot_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Collect host and runtime state
+      ansible.builtin.shell: |
+        set -o pipefail
+        {
+          echo "== timestamp =="
+          date -Is
+          echo
+          echo "== release =="
+          (sudo nvidia-release-info || true) 2>&1
+          (cat /etc/dgx-release || true) 2>&1
+          echo
+          echo "== kernel =="
+          uname -a
+          echo
+          echo "== nvidia-smi =="
+          (nvidia-smi || true) 2>&1
+          echo
+          echo "== nvcc =="
+          (nvcc --version || true) 2>&1
+          echo
+          echo "== python / torch =="
+          python3 - <<'PY' 2>&1 || true
+        import sys
+        print("python", sys.version)
+        try:
+            import torch
+            print("torch", torch.__version__)
+            print("cuda_available", torch.cuda.is_available())
+            print("cuda_version", getattr(torch.version, "cuda", None))
+        except Exception as exc:
+            print("torch_probe_error", repr(exc))
+        PY
+          echo
+          echo "== vllm venv / torch =="
+          {{ vllm_workdir | default('/home/devjoe/Projects/vllm') }}/.venv/bin/python - <<'PY' 2>&1 || true
+        import sys
+        print("python", sys.version)
+        try:
+            import torch
+            print("torch", torch.__version__)
+            print("cuda_available", torch.cuda.is_available())
+            print("cuda_version", getattr(torch.version, "cuda", None))
+        except Exception as exc:
+            print("torch_probe_error", repr(exc))
+        PY
+          echo
+          echo "== systemd =="
+          for unit in vllm ollama observability-canary.timer observability-victoriametrics observability-grafana observability-dcgm-exporter observability-node-exporter observability-vmagent; do
+            printf "%s " "$unit"
+            systemctl is-active "$unit" 2>/dev/null || true
+          done
+          echo
+          echo "== docker ps =="
+          (docker ps || true) 2>&1
+          echo
+          echo "== vllm models =="
+          (curl -fsS http://localhost:{{ vllm_port | default(8000) }}/v1/models || true) 2>&1
+          echo
+          echo "== ollama ps =="
+          (curl -fsS http://localhost:11434/api/ps || true) 2>&1
+          echo
+          echo "== disk =="
+          df -h /
+          echo
+          echo "== cache sizes =="
+          du -sh ~/.cache/huggingface ~/.cache/vllm ~/.cache/ollama 2>/dev/null || true
+          echo
+          echo "== reboot required =="
+          test -f /var/run/reboot-required && cat /var/run/reboot-required || echo "no"
+        } | tee "{{ snapshot_dir }}/preflight-{{ ansible_facts.date_time.iso8601_basic_short }}.txt"
+      args:
+        executable: /bin/bash
+      register: preflight
+      changed_when: false
+
+    - name: Show preflight summary path
+      ansible.builtin.debug:
+        msg: "Preflight snapshot written to {{ snapshot_dir }}/preflight-{{ ansible_facts.date_time.iso8601_basic_short }}.txt"
+
+    - name: Show captured state
+      ansible.builtin.debug:
+        var: preflight.stdout_lines

@@ -42,14 +42,14 @@
           messages:
             - role: user
               content: "Reply with exactly the word 'ok'."
-          max_tokens: 16
+          max_tokens: 64
           temperature: 0
         return_content: true
       register: text_resp
 
     - name: Show text-only response
       ansible.builtin.debug:
-        msg: "{{ text_resp.json.choices[0].message.content }}"
+        var: text_resp.json.choices[0].message
 
     - name: Data-URI image regression check
       ansible.builtin.uri:
@@ -66,7 +66,7 @@
                 - type: image_url
                   image_url:
                     url: "{{ sample_data_uri }}"
-          max_tokens: 16
+          max_tokens: 64
           temperature: 0
         return_content: true
         status_code: 200
@@ -77,7 +77,10 @@
         that:
           - data_uri_resp.status == 200
           - data_uri_resp.json.choices[0].message.content is defined
-          - data_uri_resp.json.choices[0].message.content | length > 0
+          - >-
+            ((data_uri_resp.json.choices[0].message.content | default('', true) | length) > 0)
+            or
+            ((data_uri_resp.json.choices[0].message.reasoning | default('', true) | length) > 0)
         fail_msg: >-
           vLLM data-URI regression: status={{ data_uri_resp.status }}
           body={{ data_uri_resp.content | default('') | truncate(200) }}

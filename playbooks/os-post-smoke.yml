@@ -1,0 +1,73 @@
+---
+# Post-reboot checks after a DGX Spark OS / firmware update.
+
+- name: DGX OS post-update smoke test
+  hosts: dgx
+  become: false
+  gather_facts: true
+  vars:
+    snapshot_dir: "{{ remote_workdir | default('/home/devjoe/Projects/Ollama') }}/os-update"
+  tasks:
+    - name: Ensure snapshot directory exists
+      ansible.builtin.file:
+        path: "{{ snapshot_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run CUDA and PyTorch smoke checks
+      ansible.builtin.shell: |
+        set -o pipefail
+        {
+          echo "== timestamp =="
+          date -Is
+          echo
+          echo "== release =="
+          (sudo nvidia-release-info || true) 2>&1
+          (cat /etc/dgx-release || true) 2>&1
+          echo
+          echo "== kernel =="
+          uname -a
+          echo
+          echo "== nvidia-smi =="
+          nvidia-smi
+          echo
+          echo "== nvcc =="
+          (nvcc --version || true) 2>&1
+          echo
+          echo "== system python / torch =="
+          python3 - <<'PY' 2>&1 || true
+        import sys
+        print("python", sys.version)
+        try:
+            import torch
+            print("torch", torch.__version__)
+            print("cuda_available", torch.cuda.is_available())
+            print("cuda_version", getattr(torch.version, "cuda", None))
+        except Exception as exc:
+            print("torch_probe_error", repr(exc))
+        PY
+          echo
+          echo "== vllm venv torch cuda smoke =="
+          {{ vllm_workdir | default('/home/devjoe/Projects/vllm') }}/.venv/bin/python - <<'PY'
+        import torch
+        print("torch", torch.__version__)
+        print("cuda_available", torch.cuda.is_available())
+        assert torch.cuda.is_available()
+        x = torch.randn(1024, 1024, device="cuda")
+        y = x @ x
+        torch.cuda.synchronize()
+        print("matmul_mean", float(y.mean().item()))
+        PY
+        } | tee "{{ snapshot_dir }}/post-smoke-{{ ansible_facts.date_time.iso8601_basic_short }}.txt"
+      args:
+        executable: /bin/bash
+      register: smoke
+      changed_when: false
+
+    - name: Show post-smoke summary path
+      ansible.builtin.debug:
+        msg: "Post-smoke snapshot written to {{ snapshot_dir }}/post-smoke-{{ ansible_facts.date_time.iso8601_basic_short }}.txt"
+
+    - name: Show smoke output
+      ansible.builtin.debug:
+        var: smoke.stdout_lines

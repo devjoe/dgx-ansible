@@ -19,7 +19,9 @@ Stop after #1 unless the task needs more:
    `make benchmark` actually execute, in order.
 4. **`docs/dgx-spark-vllm-model-selection-2026-05-06.md`** — pick the best
    shared DGX vLLM model for fb-reader + OpenCode (Tier B replay evidence).
-5. **`docs/handover-prismaquant.md`** — paused investigation into a
+5. **`docs/dgx-spark-software-update-guidance-2026-05-11.md`** — DGX OS /
+   CUDA / firmware update guidance and smoke-test runbook.
+6. **`docs/handover-prismaquant.md`** — paused investigation into a
    95 tok/s PrismaQuant + DFlash config. Read only if reviving that thread.
 
 For Mac-side config, model-choice rationale, or cross-endpoint benchmarks, go
@@ -96,6 +98,11 @@ make lint                  # ansible --syntax-check on all playbooks
 make deploy-obs            # stand up obs stack (needs .vault_pass + dgx.yml.vault)
 make status-obs            # systemctl state of every observability unit
 make canary-once           # trigger the obs canary service immediately
+make os-preflight          # snapshot DGX OS/CUDA/service state before OS update
+make os-maint-stop         # stop vLLM/Ollama/canary before manual OS update
+make os-post-smoke         # post-reboot NVIDIA/CUDA/PyTorch smoke test
+make os-restore            # restore serving + observability after update
+make os-validate           # vLLM regression check + one DGX canary
 ```
 
 ## vLLM speed spot-check (Mac-side)
@@ -159,7 +166,8 @@ dgx-ansible/
 │   ├── dgx.yml                 # SOURCE OF TRUTH (env, models, vLLM knobs, obs)
 │   └── dgx.yml.vault.example   # template for encrypted secrets (Grafana pw, Telegram)
 ├── playbooks/
-│   └── deploy-observability.yml  # observability v1 standalone playbook
+│   ├── deploy-observability.yml  # observability v1 standalone playbook
+│   └── os-*.yml                  # DGX OS update pre/post automation
 ├── roles/
 │   ├── ollama/                 # install + systemd + firewall + model pulls
 │   ├── vllm/                   # venv + systemd + firewall + health check
