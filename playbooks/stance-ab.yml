@@ -15,6 +15,7 @@
     stance_ab_runner: "{{ stance_ab_remote_dir }}/run_stance_bias_eval.py"
     stance_ab_corpus: "{{ stance_ab_remote_dir }}/stance_bias_corpus.json"
     stance_ab_base_url: "http://localhost:{{ vllm_port }}"
+    stance_ab_gemma_log: "{{ stance_ab_output_dir }}/gemma4-mtp-container.log"
     stance_ab_timeout: 240
     stance_ab_max_tokens: 2200
 
@@ -95,10 +96,10 @@
     - name: Run Gemma4 MTP candidate and restore Qwen afterwards
       block:
         - name: Stop Ansible-managed Qwen vLLM before Gemma4 launch
-          ansible.builtin.systemd:
-            name: vllm
-            state: stopped
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
           become: true
+          changed_when: true
 
         - name: Remove previous Gemma4 A/B container if present
           ansible.builtin.command:
@@ -110,7 +111,7 @@
         - name: Launch Gemma4 FP8-it MTP container
           ansible.builtin.shell: |
             set -euo pipefail
-            docker run --rm -d \
+            docker run -d \
               --name {{ gemma4_mtp_container_name }} \
               --gpus all \
               --ipc=host \
@@ -157,10 +158,16 @@
               delay: "{{ gemma4_mtp_readiness_delay }}"
               until: gemma_models.status == 200
           rescue:
-            - name: Show Gemma4 MTP container logs on readiness failure
-              ansible.builtin.command:
-                cmd: "docker logs --tail 120 {{ gemma4_mtp_container_name }}"
+            - name: Save Gemma4 MTP container logs on readiness failure
+              ansible.builtin.shell: |
+                docker logs --tail 500 {{ gemma4_mtp_container_name }} > {{ stance_ab_gemma_log }} 2>&1 || true
               become: true
+              failed_when: false
+              changed_when: false
+
+            - name: Read Gemma4 MTP readiness failure log
+              ansible.builtin.command:
+                cmd: "tail -120 {{ stance_ab_gemma_log }}"
               register: gemma_logs
               failed_when: false
               changed_when: false
@@ -169,6 +176,7 @@
               ansible.builtin.fail:
                 msg: >-
                   Gemma4 MTP did not become ready on /v1/models.
+                  Full log: {{ stance_ab_gemma_log }}.
                   Last logs: {{ gemma_logs.stdout | default('') | truncate(4000) }}
 
         - name: Run Gemma4 MTP stance candidate
@@ -192,6 +200,13 @@
               - "{{ stance_ab_max_tokens | string }}"
           changed_when: true
       always:
+        - name: Save Gemma4 A/B container logs before cleanup
+          ansible.builtin.shell: |
+            docker logs --tail 1000 {{ gemma4_mtp_container_name }} > {{ stance_ab_gemma_log }} 2>&1 || true
+          become: true
+          failed_when: false
+          changed_when: false
+
         - name: Stop Gemma4 A/B container
           ansible.builtin.command:
             cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
@@ -200,12 +215,14 @@
           changed_when: true
 
         - name: Restore Ansible-managed Qwen vLLM service
-          ansible.builtin.systemd:
-            name: vllm
-            state: started
-            enabled: true
-            daemon_reload: true
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
           become: true
+          changed_when: true
 
         - name: Wait for restored Qwen vLLM /v1/models
           ansible.builtin.uri:

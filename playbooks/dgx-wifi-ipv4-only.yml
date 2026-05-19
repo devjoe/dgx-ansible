@@ -1,0 +1,79 @@
+---
+- name: Keep DGX outward Wi-Fi on IPv4 only
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    dgx_wifi_connection: "10Design2"
+    dgx_wifi_interface: "wlP9s9"
+  tasks:
+    - name: Read Wi-Fi IPv6 settings
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - -g
+          - ipv6.method,ipv6.ignore-auto-dns
+          - con
+          - show
+          - "{{ dgx_wifi_connection }}"
+      register: wifi_ipv6_settings
+      changed_when: false
+
+    - name: Disable IPv6 on outward Wi-Fi profile
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - con
+          - mod
+          - "{{ dgx_wifi_connection }}"
+          - ipv6.method
+          - disabled
+          - ipv6.ignore-auto-dns
+          - "yes"
+      become: true
+      when: wifi_ipv6_settings.stdout_lines != ["disabled", "yes"]
+
+    - name: Reconnect Wi-Fi when IPv6 settings changed
+      ansible.builtin.shell: |
+        set -euo pipefail
+        nmcli con down "{{ dgx_wifi_connection }}" || true
+        nmcli con up "{{ dgx_wifi_connection }}"
+      args:
+        executable: /bin/bash
+      become: true
+      when: wifi_ipv6_settings.stdout_lines != ["disabled", "yes"]
+
+    - name: Verify Wi-Fi has IPv4 address
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -4
+          - -br
+          - addr
+          - show
+          - "{{ dgx_wifi_interface }}"
+      register: wifi_ipv4_state
+      changed_when: false
+      failed_when: "' UP ' not in wifi_ipv4_state.stdout or '/' not in wifi_ipv4_state.stdout"
+
+    - name: Verify Wi-Fi has no global IPv6 address
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -6
+          - addr
+          - show
+          - dev
+          - "{{ dgx_wifi_interface }}"
+          - scope
+          - global
+      register: wifi_ipv6_global
+      changed_when: false
+      failed_when: wifi_ipv6_global.stdout | length > 0
+
+    - name: Show Wi-Fi network state
+      ansible.builtin.debug:
+        msg:
+          connection: "{{ dgx_wifi_connection }}"
+          interface: "{{ wifi_ipv4_state.stdout }}"
+          ipv6_global: "{{ wifi_ipv6_global.stdout | default('') }}"

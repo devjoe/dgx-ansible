@@ -87,6 +87,7 @@ any-error triggers). v2 sequencing is in
 make help                  # list targets
 make install-deps          # install ansible-galaxy collections
 make ping                  # SSH + sudo reach
+make ping-ipv4             # bypass gx10.local/mDNS via Wi-Fi IPv4
 make deploy                # converge Ollama + vLLM to group_vars state
 make status                # GET /api/ps (Ollama loaded models)
 make status-vllm           # systemctl is-active vllm + GET /v1/models
@@ -98,6 +99,7 @@ make lint                  # ansible --syntax-check on all playbooks
 make deploy-obs            # stand up obs stack (needs .vault_pass + dgx.yml.vault)
 make status-obs            # systemctl state of every observability unit
 make canary-once           # trigger the obs canary service immediately
+make wifi-ipv4-only-ipv4   # keep 10Design2 IPv4-only via Wi-Fi IPv4
 make os-preflight          # snapshot DGX OS/CUDA/service state before OS update
 make os-maint-stop         # stop vLLM/Ollama/canary before manual OS update
 make os-post-smoke         # post-reboot NVIDIA/CUDA/PyTorch smoke test
@@ -120,6 +122,24 @@ and IPv6 for `.local` hostnames). Retry:
 ```bash
 python3 scripts/run_vllm_classification.py --connect-mode auto
 ```
+
+For Ansible operations, use the direct IPv4 inventory when `gx10.local` mDNS is
+flaky:
+
+```bash
+make stance-ab-ipv4
+make status-vllm-ipv4
+```
+
+The outward Wi-Fi profile `10Design2` should stay IPv4-only because the
+upstream router has been unstable on IPv6:
+
+```bash
+make wifi-ipv4-only-ipv4
+```
+
+Override `DGX_SSH_KEY` if the NVIDIA Sync key is stored outside the default
+macOS path.
 
 `ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on
 the very first `make deploy` before NOPASSWD sudo is set up):
