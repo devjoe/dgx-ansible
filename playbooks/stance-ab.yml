@@ -1,0 +1,222 @@
+---
+# Run a controlled Qwen DFlash vs Gemma4 MTP stance/uncertainty A/B on DGX.
+#
+# This playbook deliberately restores the Ansible-managed Qwen vLLM service in
+# `always`, because the Gemma candidate needs exclusive memory on DGX Spark.
+
+- name: Run stance/uncertainty A/B on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    stance_ab_run_id: "{{ stance_ab_run_id_fixed }}"
+    stance_ab_remote_dir: "{{ remote_workdir }}/stance-ab"
+    stance_ab_output_dir: "{{ remote_workdir }}/benchmarks/stance-ab-{{ stance_ab_run_id }}"
+    stance_ab_runner: "{{ stance_ab_remote_dir }}/run_stance_bias_eval.py"
+    stance_ab_corpus: "{{ stance_ab_remote_dir }}/stance_bias_corpus.json"
+    stance_ab_base_url: "http://localhost:{{ vllm_port }}"
+    stance_ab_timeout: 240
+    stance_ab_max_tokens: 1800
+
+    gemma4_mtp_container_name: "gemma4-mtp-ab"
+    gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
+    gemma4_mtp_model: "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic"
+    gemma4_mtp_assistant_model: "google/gemma-4-26B-A4B-it-assistant"
+    gemma4_mtp_served_name: "gemma4-fp8-mtp"
+    gemma4_mtp_speculative_config: '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+    gemma4_mtp_hf_hub_offline: true
+    gemma4_mtp_gpu_memory_utilization: "0.55"
+    gemma4_mtp_kv_cache_dtype: "fp8"
+    gemma4_mtp_max_model_len: 262144
+    gemma4_mtp_max_num_seqs: 4
+    gemma4_mtp_max_num_batched_tokens: 16384
+    gemma4_mtp_patch_host_path: ""
+    gemma4_mtp_readiness_retries: 60
+    gemma4_mtp_readiness_delay: 5
+  tasks:
+    - name: Set stable run id for this play invocation
+      ansible.builtin.set_fact:
+        stance_ab_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure remote stance A/B dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ stance_ab_remote_dir }}"
+        - "{{ stance_ab_output_dir }}"
+
+    - name: Copy stance runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval.py"
+        dest: "{{ stance_ab_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+        dest: "{{ stance_ab_corpus }}"
+        mode: "0644"
+
+    - name: Confirm Qwen vLLM is answering before baseline
+      ansible.builtin.uri:
+        url: "{{ stance_ab_base_url }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run Qwen DFlash stance baseline
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ stance_ab_runner }}"
+          - --base-url
+          - "{{ stance_ab_base_url }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash
+          - --corpus
+          - "{{ stance_ab_corpus }}"
+          - --output
+          - "{{ stance_ab_output_dir }}/qwen-dflash.json"
+          - --timeout
+          - "{{ stance_ab_timeout | string }}"
+          - --max-tokens
+          - "{{ stance_ab_max_tokens | string }}"
+      changed_when: true
+
+    - name: Run Gemma4 MTP candidate and restore Qwen afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before Gemma4 launch
+          ansible.builtin.systemd:
+            name: vllm
+            state: stopped
+          become: true
+
+        - name: Remove previous Gemma4 A/B container if present
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Launch Gemma4 FP8-it MTP container
+          ansible.builtin.shell: |
+            set -euo pipefail
+            docker run --rm -d \
+              --name {{ gemma4_mtp_container_name }} \
+              --gpus all \
+              --ipc=host \
+              --network host \
+              -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+              -e HF_HUB_OFFLINE={{ gemma4_mtp_hf_hub_offline | ternary('1','0') }} \
+              -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
+              -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
+              {% if gemma4_mtp_patch_host_path | length > 0 -%}
+              -v {{ gemma4_mtp_patch_host_path }}:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_mtp.py:ro \
+              {% endif -%}
+              {{ gemma4_mtp_image }} \
+              {{ gemma4_mtp_model }} \
+              --host 0.0.0.0 \
+              --port {{ vllm_port }} \
+              --served-model-name {{ gemma4_mtp_served_name }} \
+              --gpu-memory-utilization {{ gemma4_mtp_gpu_memory_utilization }} \
+              --kv-cache-dtype {{ gemma4_mtp_kv_cache_dtype }} \
+              --max-model-len {{ gemma4_mtp_max_model_len }} \
+              --max-num-seqs {{ gemma4_mtp_max_num_seqs }} \
+              --max-num-batched-tokens {{ gemma4_mtp_max_num_batched_tokens }} \
+              --tensor-parallel-size 1 \
+              --trust-remote-code \
+              --enable-chunked-prefill \
+              --enable-prefix-caching \
+              --tool-call-parser gemma4 \
+              --reasoning-parser gemma4 \
+              --enable-auto-tool-choice \
+              --speculative-config '{{ gemma4_mtp_speculative_config }}'
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for Gemma4 MTP readiness with logs on failure
+          block:
+            - name: Wait for Gemma4 MTP /v1/models
+              ansible.builtin.uri:
+                url: "{{ stance_ab_base_url }}/v1/models"
+                return_content: true
+                timeout: 5
+              register: gemma_models
+              retries: "{{ gemma4_mtp_readiness_retries }}"
+              delay: "{{ gemma4_mtp_readiness_delay }}"
+              until: gemma_models.status == 200
+          rescue:
+            - name: Show Gemma4 MTP container logs on readiness failure
+              ansible.builtin.command:
+                cmd: "docker logs --tail 120 {{ gemma4_mtp_container_name }}"
+              become: true
+              register: gemma_logs
+              failed_when: false
+              changed_when: false
+
+            - name: Fail with Gemma4 readiness context
+              ansible.builtin.fail:
+                msg: >-
+                  Gemma4 MTP did not become ready on /v1/models.
+                  Last logs: {{ gemma_logs.stdout | default('') | truncate(4000) }}
+
+        - name: Run Gemma4 MTP stance candidate
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - "{{ stance_ab_runner }}"
+              - --base-url
+              - "{{ stance_ab_base_url }}"
+              - --model
+              - "{{ gemma4_mtp_served_name }}"
+              - --label
+              - gemma4-fp8-mtp
+              - --corpus
+              - "{{ stance_ab_corpus }}"
+              - --output
+              - "{{ stance_ab_output_dir }}/gemma4-fp8-mtp.json"
+              - --timeout
+              - "{{ stance_ab_timeout | string }}"
+              - --max-tokens
+              - "{{ stance_ab_max_tokens | string }}"
+          changed_when: true
+      always:
+        - name: Stop Gemma4 A/B container
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.systemd:
+            name: vllm
+            state: started
+            enabled: true
+            daemon_reload: true
+          become: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ stance_ab_base_url }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Show stance A/B output directory
+      ansible.builtin.debug:
+        msg: "Stance A/B outputs: {{ stance_ab_output_dir }}"

@@ -6,7 +6,7 @@ ANSIBLE := ansible-playbook $(if $(ASK_BECOME),--ask-become-pass,)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping deploy benchmark benchmark-vllm benchmark-vllm-perf status status-vllm unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping deploy benchmark benchmark-vllm benchmark-vllm-perf stance-ab status status-vllm unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -29,6 +29,9 @@ benchmark-vllm:  ## Sanity-check vLLM Tier B (text + data-URI image)
 benchmark-vllm-perf:  ## Measure vLLM perf matrix (prefill/decode × concurrency)
 	$(ANSIBLE) benchmark-vllm-perf.yml
 
+stance-ab:  ## Run Qwen DFlash vs Gemma4 MTP stance/uncertainty A/B on DGX
+	$(ANSIBLE) playbooks/stance-ab.yml
+
 status:  ## Show what Ollama currently has loaded
 	@ansible dgx -m ansible.builtin.uri \
 		-a "url=http://localhost:11434/api/ps return_content=yes" \
@@ -48,6 +51,7 @@ lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) benchmark.yml --syntax-check
 	$(ANSIBLE) benchmark-vllm.yml --syntax-check
 	$(ANSIBLE) benchmark-vllm-perf.yml --syntax-check
+	$(ANSIBLE) playbooks/stance-ab.yml --syntax-check
 	$(ANSIBLE) playbooks/deploy-observability.yml --syntax-check
 	$(ANSIBLE) playbooks/os-preflight.yml --syntax-check
 	$(ANSIBLE) playbooks/os-maint-stop.yml --syntax-check
