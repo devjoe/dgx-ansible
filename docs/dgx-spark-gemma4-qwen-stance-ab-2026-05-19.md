@@ -250,11 +250,11 @@ The newer upstream vLLM guidance for Gemma4 assistants is to specify
 assistant checkpoint as a generic draft model on older paths. The current docs
 also recommend starting with a small speculative depth such as `1`.
 
-The official CUDA 13 image path to try next is `vllm/vllm-openai:latest-cu130`,
-but the DGX could not pull or inspect the remote manifest because Docker Hub DNS
-resolution timed out. Until that image is locally available, the reproducible
-candidate remains `vllm/vllm-openai:gemma4-0505-cu130` with the updated
-`method=mtp` config.
+The official CUDA 13 image path to try next was
+`vllm/vllm-openai:latest-cu130`. The DGX initially could not pull or inspect
+the remote manifest because Docker Hub DNS resolution timed out. Re-enabling
+the `10Design2` Wi-Fi connection and disabling IPv6 on that connection restored
+Docker Hub access.
 
 The first full run with explicit `method=mtp` and
 `num_speculative_tokens=1` completed under:
@@ -281,3 +281,30 @@ The explicit MTP config improved Gemma end-to-end latency substantially on this
 corpus, but vLLM metrics still reported speculative decoding acceptance at 0%.
 The improvement therefore appears to come from reduced speculative depth and/or
 runtime differences, not from accepted draft tokens.
+
+## 2026-05-19 latest-cu130 check
+
+After Wi-Fi recovery, `vllm/vllm-openai:latest-cu130` was pulled and inspected:
+
+- image id/digest:
+  `sha256:04563c302537a91aa49ebdfbceda96111c5712275999b7e8804fa598f0b5641d`
+- image created: `2026-04-27T22:28:18Z`
+- vLLM: `0.20.0`
+- CUDA: `13.0.2`
+
+This tag is older than the locally cached `vllm/vllm-openai:gemma4-0505-cu130`
+image, which reports vLLM `0.20.2rc1.dev49+g9b4e83934` and CUDA `13.0.2`.
+
+The latest-cu130 candidate did not become a valid Gemma4 MTP path. The main
+Gemma4 FP8-it target resolved, but the assistant checkpoint failed during
+`SpeculativeConfig` validation:
+
+```text
+Value error, The checkpoint you are trying to load has model type
+`gemma4_assistant` but Transformers does not recognize this architecture.
+```
+
+Conclusion: do not switch this experiment to `latest-cu130`. For this DGX
+Spark A/B, keep `vllm/vllm-openai:gemma4-0505-cu130` as the reproducible Gemma4
+MTP image unless a newer tag is verified to include both the vLLM Gemma4 MTP
+path and a Transformers build that recognizes `gemma4_assistant`.

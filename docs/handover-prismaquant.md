@@ -5,7 +5,7 @@ This document captures the status of the investigation into running PrismaQuant 
 ## Current Status
 - **Investigation Paused**: 2026-05-04.
 - **Stable State**: System is running `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash) via vLLM (systemd mode).
-- **Network**: Wi-Fi `10Design2` was enabled on DGX to restore internet access. IPv6 was temporarily disabled to fix download stalls.
+- **Network**: Wi-Fi `10Design2` was enabled on DGX to restore internet access. Keep IPv6 disabled on this outward-facing Wi-Fi profile; the upstream router has been unstable on IPv6 and previously caused Docker Hub / Hugging Face download stalls. The validated profile state is IPv4 `192.168.1.102/24`, no global IPv6 address on `wlP9s9`, and DNS `8.8.8.8` / `8.8.4.4`.
 
 ## PrismaQuant Findings
 - **V1 Engine Conflict**: vLLM nightly/latest attempts to use the V1 engine on Blackwell by default. This engine is currently incompatible with `compressed-tensors` (PrismaQuant), causing `NotImplementedError`.
