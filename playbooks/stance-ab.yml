@@ -23,7 +23,7 @@
     gemma4_mtp_model: "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic"
     gemma4_mtp_assistant_model: "google/gemma-4-26B-A4B-it-assistant"
     gemma4_mtp_served_name: "gemma4-fp8-mtp"
-    gemma4_mtp_speculative_config: '{"model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+    gemma4_mtp_speculative_config: '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":1}'
     gemma4_mtp_hf_hub_offline: true
     gemma4_mtp_gpu_memory_utilization: "0.55"
     gemma4_mtp_kv_cache_dtype: "fp8"

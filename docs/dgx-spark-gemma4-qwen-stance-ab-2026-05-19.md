@@ -33,13 +33,15 @@ The default candidate is:
 
 - target: `RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
 - assistant: `google/gemma-4-26B-A4B-it-assistant`
-- speculative tokens: `4`
+- speculative config: `{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":1}`
 - max context: `262144`
 - `kv_cache_dtype=fp8`
 - `gpu_memory_utilization=0.55`
 
 This is the same model pair that previously completed the real `fb-reader`
-Tier B replay. The playbook defaults to the locally cached
+Tier B replay. The speculative config now follows the current vLLM Gemma4 MTP
+guidance by setting `method=mtp` explicitly and starting with one speculative
+token. The playbook defaults to the locally cached
 `vllm/vllm-openai:gemma4-0505-cu130` image and runs with
 `HF_HUB_OFFLINE=1`, because an initial attempt with `vllm/vllm-openai:latest`
 resolved to a newer generic image and failed while trying to refresh
@@ -240,3 +242,42 @@ Interpretation:
 - The v2 schema is useful, but the prompt needs a second tightening pass before
   the full A/B numbers should be used as a model-quality decision. The current
   result is best treated as a schema-discipline and harness result.
+
+## 2026-05-19 current MTP-method follow-up
+
+The newer upstream vLLM guidance for Gemma4 assistants is to specify
+`"method":"mtp"` in `--speculative-config`; without `method`, vLLM may treat the
+assistant checkpoint as a generic draft model on older paths. The current docs
+also recommend starting with a small speculative depth such as `1`.
+
+The official CUDA 13 image path to try next is `vllm/vllm-openai:latest-cu130`,
+but the DGX could not pull or inspect the remote manifest because Docker Hub DNS
+resolution timed out. Until that image is locally available, the reproducible
+candidate remains `vllm/vllm-openai:gemma4-0505-cu130` with the updated
+`method=mtp` config.
+
+The first full run with explicit `method=mtp` and
+`num_speculative_tokens=1` completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/stance-ab-20260519T134807Z/
+```
+
+Logs confirmed vLLM initialized
+`SpeculativeConfig(method='mtp', model='google/gemma-4-26B-A4B-it-assistant',
+num_spec_tokens=1)` and resolved `Gemma4MTPModel`. This means the run used the
+current Gemma4 MTP path rather than the older generic draft-model path.
+
+Compared with the previous schema v2 run:
+
+| Run | Model | Schema OK | Topic contestedness OK | Target-claim stance OK | Frame handling OK | Latency p50 | Latency p90 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| previous `num_speculative_tokens=4` | Qwen DFlash 262K | 15/21 | 14/21 | 9/21 | 2/6 | 3.9240s | 5.1167s |
+| previous `num_speculative_tokens=4` | Gemma4 FP8-it MTP | 10/21 | 9/21 | 5/21 | 0/6 | 21.0892s | 26.5560s |
+| explicit `method=mtp`, `num_speculative_tokens=1` | Qwen DFlash 262K | 15/21 | 14/21 | 8/21 | 1/6 | 3.7758s | 5.2008s |
+| explicit `method=mtp`, `num_speculative_tokens=1` | Gemma4 FP8-it MTP | 10/21 | 9/21 | 5/21 | 0/6 | 14.6553s | 21.0907s |
+
+The explicit MTP config improved Gemma end-to-end latency substantially on this
+corpus, but vLLM metrics still reported speculative decoding acceptance at 0%.
+The improvement therefore appears to come from reduced speculative depth and/or
+runtime differences, not from accepted draft tokens.
