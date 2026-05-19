@@ -1,6 +1,6 @@
 # DGX Spark vLLM Model Selection (fb-reader + OpenCode)
 
-Last updated: 2026-05-07
+Last updated: 2026-05-19
 
 Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 
@@ -296,6 +296,86 @@ Next viable MTP steps:
   fb-reader replay, not repo-editing quality/latency.
 - Investigate GB10 FP8 MoE tuning config generation for Gemma4:
   `E=128,N=704,device_name=NVIDIA_GB10,dtype=fp8_w8a8.json`.
+
+## DeepSeek V4 Flash / ds4-server Follow-up (2026-05-19)
+
+Prompting context: evaluate whether DeepSeek V4 Flash, as packaged by Audrey
+Tang's `pi-ds4` / `ds4` work, should become a DGX Spark backend for
+`fb-reader`.
+
+Important references:
+- `pi-ds4` guide:
+  - https://pi.audreyt.org/
+- `pi-ds4` repository:
+  - https://github.com/audreyt/pi-ds4
+- DGX Spark CUDA-native DS4 report:
+  - https://forums.developer.nvidia.com/t/fully-custom-cuda-native-deepseek-4-flash-optimized-for-1x-spark-antirez-ds4/369791
+- Spark reproduction notes:
+  - https://github.com/Entrpi/ds4-on-spark
+
+Key facts from the 2026-05-19 desk check:
+- `pi-ds4` is primarily a lifecycle wrapper: clone/build `audreyt/ds4`,
+  download the GGUF checkpoint, and start `ds4-server`.
+- On DGX Spark / Linux, the expected path is CUDA-native `ds4-server`, compiled
+  with `nvcc`; this is not a Mac-only path.
+- `ds4-server` exposes OpenAI-compatible endpoints, including
+  `/v1/chat/completions`, `/v1/responses`, and `/v1/models`. API shape should
+  therefore be compatible enough for a controlled `fb-reader` replay harness.
+- Disk budget should be treated conservatively. Source numbers vary across
+  docs and reproduction notes, but a practical DGX experiment should reserve at
+  least 110-120 GB for the checkpoint and cache.
+- Community Spark reports show a viable single-Spark launch, with cold load on
+  the order of tens of seconds, prefill around hundreds of tok/s, and decode
+  around the mid-20s tok/s. Those are useful directional signals only; they are
+  not a substitute for the real `fb-reader` Tier B replay.
+- The current DS4 serving path is single-stream. Concurrent calls queue instead
+  of being batched like vLLM, so it is weaker as a shared LAN backend unless
+  request volume stays low or an outer queue is accepted.
+- MTP should not be counted as a near-term win on Spark. Current reproduction
+  notes report that the Spark CUDA path lacks the needed Q4_K draft kernel
+  support, so MTP is not currently accelerating the workload.
+
+fb-reader implications:
+- Treat DeepSeek V4 Flash as a text-only candidate until proven otherwise.
+  `fb-reader`'s decisive Tier B corpus is image-heavy: 40/50 cases contain
+  data-URI JPEGs.
+- This makes DS4 a poor drop-in replacement for the current vLLM multimodal
+  Tier B service. It may still be valuable for text-only deep reasoning,
+  long-form analysis, or an OpenCode-style backend.
+- If DS4 quality is clearly better, the likely production shape is routing:
+  keep Qwen DFlash / vLLM for image-bearing Tier B requests, and consider DS4
+  only for text-only or post-caption requests.
+
+Experiment protocol:
+1. Keep the Ansible-managed Qwen DFlash service as the default on port 8000.
+2. Build or launch DS4 in an isolated DGX workdir, serving on a separate port
+   such as 8001.
+3. Smoke check:
+   - `GET /v1/models`
+   - text-only `/v1/chat/completions`
+   - JSON schema prompt compatible with `fb-reader`
+4. Replay only the text-only subset of the existing Tier B corpus first.
+5. For image cases, run a second replay variant with images removed or replaced
+   by deterministic captions/OCR, and label that result separately.
+6. Compare `http_success`, `parse_ok`, `schema_ok`, all/text p50/p90, and a
+   small human quality sample before considering any routing change.
+7. Stop DS4 and confirm the stable Qwen DFlash service still answers
+   `/v1/models` and the normal vLLM smoke check.
+
+Acceptance bar:
+- DS4 must produce stable `fb-reader` JSON (`schema_ok` near 50/50 on the
+  applicable subset).
+- DS4 must show a clear quality benefit or a latency profile that justifies its
+  single-stream operational cost.
+- DS4 must not be promoted to the single shared default unless it can handle the
+  image-heavy Tier B path or a deliberate router is added.
+
+Decision:
+- Do not replace the current default yet.
+- Keep **Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound + DFlash** as the
+  Ansible-managed DGX Spark backend for `fb-reader`.
+- Track DeepSeek V4 Flash / DS4 as a text-only A/B candidate and run it only in
+  an isolated benchmark path until replay evidence exists.
 
 ## How to Apply (in This Repo)
 
