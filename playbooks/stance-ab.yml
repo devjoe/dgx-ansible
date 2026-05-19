@@ -16,7 +16,7 @@
     stance_ab_corpus: "{{ stance_ab_remote_dir }}/stance_bias_corpus.json"
     stance_ab_base_url: "http://localhost:{{ vllm_port }}"
     stance_ab_timeout: 240
-    stance_ab_max_tokens: 1800
+    stance_ab_max_tokens: 2200
 
     gemma4_mtp_container_name: "gemma4-mtp-ab"
     gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
