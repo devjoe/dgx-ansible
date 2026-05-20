@@ -8,10 +8,13 @@ DGX_SSH_KEY ?= $(HOME)/Library/Application Support/NVIDIA/Sync/config/nvsync.key
 ANSIBLE_EXTRA ?=
 ANSIBLE_ARGS := -i $(INVENTORY) $(ANSIBLE_EXTRA)
 STANCE_AB_RISK_IDS ?= contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+GEMMA_MTP_PRHEAD_SHA ?= d8b3826648da6b407f8c55457a2103be9aeb5d83
+GEMMA_MTP_PRHEAD_URL ?= https://raw.githubusercontent.com/vllm-project/vllm/$(GEMMA_MTP_PRHEAD_SHA)/vllm/model_executor/models/gemma4_mtp.py
+GEMMA_MTP_PRHEAD_REMOTE ?= /home/devjoe/Projects/Ollama/gemma-mtp-speed/gemma4_mtp-$(GEMMA_MTP_PRHEAD_SHA).py
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -60,6 +63,18 @@ gemma-mtp-fastbench-mm0:  ## Run exact external mm0 Gemma4 fastbench profile
 
 gemma-mtp-fastbench-mm0-ipv4:  ## Run exact external mm0 fastbench through direct IPv4
 	$(MAKE) gemma-mtp-fastbench-mm0 INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+gemma-mtp-fastbench-prhead:  ## Run Gemma4 no-mm fastbench with PR-head gemma4_mtp.py mounted
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=external-fastbench-g4-u085 gemma_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
+
+gemma-mtp-fastbench-prhead-ipv4:  ## Run PR-head Gemma4 fastbench through direct IPv4
+	$(MAKE) gemma-mtp-fastbench-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+gemma-mtp-fastbench-mm0-prhead:  ## Reproduce exact mm0 fastbench with PR-head gemma4_mtp.py mounted
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=external-fastbench-mm0-g4-u085 gemma_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
+
+gemma-mtp-fastbench-mm0-prhead-ipv4:  ## Run PR-head exact mm0 fastbench through direct IPv4
+	$(MAKE) gemma-mtp-fastbench-mm0-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 stance-ab:  ## Run Qwen DFlash vs Gemma4 MTP stance/uncertainty A/B on DGX
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml

@@ -98,6 +98,8 @@ make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
 make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun
 make gemma-mtp-fastbench-ipv4  # external-methodology-style Gemma4 decode bench
 make gemma-mtp-fastbench-mm0-ipv4  # exact external mm0 Gemma4 decode bench
+make gemma-mtp-fastbench-prhead-ipv4  # PR-head patched Gemma4 fastbench
+make gemma-mtp-fastbench-mm0-prhead-ipv4  # PR-head exact mm0 repro
 make stance-ab-risk-ipv4   # Taiwan / forced-framing stance risk slice
 make unload                # POST keep_alive:0 to free VRAM
 make lint                  # ansible --syntax-check on all playbooks
@@ -161,6 +163,8 @@ the decode-only fastbench:
 make gemma-mtp-speed-targeted-ipv4
 make gemma-mtp-fastbench-ipv4
 make gemma-mtp-fastbench-mm0-ipv4
+make gemma-mtp-fastbench-prhead-ipv4
+make gemma-mtp-fastbench-mm0-prhead-ipv4
 ```
 
 `ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on

@@ -36,6 +36,7 @@
     gemma_mtp_max_num_seqs: 4
     gemma_mtp_max_num_batched_tokens: 16384
     gemma_mtp_patch_host_path: ""
+    gemma_mtp_patch_url: ""
     gemma_mtp_readiness_retries: 72
     gemma_mtp_readiness_delay: 5
 
@@ -133,6 +134,15 @@
         dest: "{{ gemma_mtp_corpus }}"
         mode: "0644"
 
+    - name: Fetch Gemma MTP patch file to DGX
+      ansible.builtin.get_url:
+        url: "{{ gemma_mtp_patch_url }}"
+        dest: "{{ gemma_mtp_patch_host_path }}"
+        mode: "0644"
+      when:
+        - gemma_mtp_patch_url | length > 0
+        - gemma_mtp_patch_host_path | length > 0
+
     - name: Write matrix manifest
       ansible.builtin.copy:
         dest: "{{ gemma_mtp_output_dir }}/manifest.json"
@@ -142,6 +152,8 @@
           'image': gemma_mtp_image,
           'model': gemma_mtp_model,
           'assistant_model': gemma_mtp_assistant_model,
+          'patch_url': gemma_mtp_patch_url,
+          'patch_host_path': gemma_mtp_patch_host_path,
           'profiles': gemma_mtp_selected_profiles,
           'risk_ids': gemma_mtp_risk_ids,
           'decode_repeats': gemma_mtp_decode_repeats,

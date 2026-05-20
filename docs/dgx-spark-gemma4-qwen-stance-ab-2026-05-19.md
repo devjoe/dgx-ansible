@@ -447,6 +447,8 @@ Follow-up controls added after reviewing the launch flags:
 make gemma-mtp-speed-targeted-ipv4
 make gemma-mtp-fastbench-ipv4
 make gemma-mtp-fastbench-mm0-ipv4
+make gemma-mtp-fastbench-prhead-ipv4
+make gemma-mtp-fastbench-mm0-prhead-ipv4
 ```
 
 `gemma-mtp-speed-targeted-ipv4` reruns only `prodctx-g1-u055` and
@@ -519,3 +521,50 @@ generation while still paying draft overhead. The exact external multimodal
 limit override also does not currently start on this local image, so reproducing
 the external number likely requires the external PR-head `gemma4_mtp.py` /
 runtime path, their benchmark harness, or both.
+
+The next experiment is exposed as:
+
+```bash
+make gemma-mtp-fastbench-prhead-ipv4
+```
+
+`gemma-mtp-fastbench-prhead-ipv4` downloads the article's pinned vLLM PR-head patch file
+(`d8b3826648da6b407f8c55457a2103be9aeb5d83`) onto the DGX and bind-mounts it
+over the container's bundled `gemma4_mtp.py`, then runs
+`external-fastbench-g4-u085`. `gemma-mtp-fastbench-mm0-prhead-ipv4` runs the
+same patch with `external-fastbench-mm0-g4-u085`. The decision criterion is
+whether the PR-head patch changes the γ=4 draft acceptance rate from 0.0% to a
+useful value.
+
+PR-head experiment result:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260520T044958Z/
+```
+
+The no-mm-limit PR-head profile completed successfully:
+
+| Profile | HTTP OK | Decode tok/s p50 | Decode tok/s p90 | Latency p50 | Latency p90 | Completion tokens mean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `external-fastbench-g4-u085` + PR-head | 5/5 | 55.0691 | 55.1619 | 9.9330s | 11.1926s | 547.0 |
+
+The container log shows the critical change from the bundled image path:
+`num_speculative_tokens=4` now reaches roughly 44.5-45.9% average draft
+acceptance. Representative log rows reported mean acceptance length around
+2.8, accepted throughput around 35-36 tok/s, and drafted throughput around
+78 tok/s. This confirms the bundled image was drafting but not accepting,
+whereas the PR-head `gemma4_mtp.py` makes MTP materially useful.
+
+The exact-mm0 PR-head profile still failed during engine initialization with
+`AttributeError: 'NoneType' object has no attribute 'size'` inside the Gemma4
+multimodal dummy/profile run. It did enter text-only mode before the failure, so
+this is a remaining vLLM/Gemma4-mm startup issue rather than a network or patch
+download issue.
+
+Decision impact: PR-head `gemma4_mtp.py` is worth keeping for Gemma4 fastbench
+work because it moves effective decode from roughly 21-23 tok/s to roughly
+55 tok/s on this prompt shape. It still does not reproduce the external
+100+ tok/s headline, and the exact-mm0 path is not usable on this image, but the
+next meaningful local experiment is now a PR-head targeted stance run
+(`prodctx-g1-u055` or a PR-head γ=4 profile) to see whether the speed gain
+holds under the Taiwan / forced-framing JSON workload.
