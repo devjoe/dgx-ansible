@@ -18,6 +18,7 @@
     stance_ab_gemma_log: "{{ stance_ab_output_dir }}/gemma4-mtp-container.log"
     stance_ab_timeout: 240
     stance_ab_max_tokens: 2200
+    stance_ab_ids: ""
 
     gemma4_mtp_container_name: "gemma4-mtp-ab"
     gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
@@ -74,23 +75,24 @@
 
     - name: Run Qwen DFlash stance baseline
       ansible.builtin.command:
-        argv:
-          - /usr/bin/python3
-          - "{{ stance_ab_runner }}"
-          - --base-url
-          - "{{ stance_ab_base_url }}"
-          - --model
-          - "{{ vllm_served_name }}"
-          - --label
-          - qwen-dflash
-          - --corpus
-          - "{{ stance_ab_corpus }}"
-          - --output
-          - "{{ stance_ab_output_dir }}/qwen-dflash.json"
-          - --timeout
-          - "{{ stance_ab_timeout | string }}"
-          - --max-tokens
-          - "{{ stance_ab_max_tokens | string }}"
+        argv: "{{ [
+          '/usr/bin/python3',
+          stance_ab_runner,
+          '--base-url',
+          stance_ab_base_url,
+          '--model',
+          vllm_served_name,
+          '--label',
+          'qwen-dflash',
+          '--corpus',
+          stance_ab_corpus,
+          '--output',
+          stance_ab_output_dir + '/qwen-dflash.json',
+          '--timeout',
+          stance_ab_timeout | string,
+          '--max-tokens',
+          stance_ab_max_tokens | string
+        ] + (['--ids', stance_ab_ids] if stance_ab_ids | length > 0 else []) }}"
       changed_when: true
 
     - name: Run Gemma4 MTP candidate and restore Qwen afterwards
@@ -137,9 +139,6 @@
               --trust-remote-code \
               --enable-chunked-prefill \
               --enable-prefix-caching \
-              --tool-call-parser gemma4 \
-              --reasoning-parser gemma4 \
-              --enable-auto-tool-choice \
               --speculative-config '{{ gemma4_mtp_speculative_config }}'
           args:
             executable: /bin/bash
@@ -181,23 +180,24 @@
 
         - name: Run Gemma4 MTP stance candidate
           ansible.builtin.command:
-            argv:
-              - /usr/bin/python3
-              - "{{ stance_ab_runner }}"
-              - --base-url
-              - "{{ stance_ab_base_url }}"
-              - --model
-              - "{{ gemma4_mtp_served_name }}"
-              - --label
-              - gemma4-fp8-mtp
-              - --corpus
-              - "{{ stance_ab_corpus }}"
-              - --output
-              - "{{ stance_ab_output_dir }}/gemma4-fp8-mtp.json"
-              - --timeout
-              - "{{ stance_ab_timeout | string }}"
-              - --max-tokens
-              - "{{ stance_ab_max_tokens | string }}"
+            argv: "{{ [
+              '/usr/bin/python3',
+              stance_ab_runner,
+              '--base-url',
+              stance_ab_base_url,
+              '--model',
+              gemma4_mtp_served_name,
+              '--label',
+              'gemma4-fp8-mtp',
+              '--corpus',
+              stance_ab_corpus,
+              '--output',
+              stance_ab_output_dir + '/gemma4-fp8-mtp.json',
+              '--timeout',
+              stance_ab_timeout | string,
+              '--max-tokens',
+              stance_ab_max_tokens | string
+            ] + (['--ids', stance_ab_ids] if stance_ab_ids | length > 0 else []) }}"
           changed_when: true
       always:
         - name: Save Gemma4 A/B container logs before cleanup

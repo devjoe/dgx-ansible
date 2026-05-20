@@ -308,3 +308,214 @@ Conclusion: do not switch this experiment to `latest-cu130`. For this DGX
 Spark A/B, keep `vllm/vllm-openai:gemma4-0505-cu130` as the reproducible Gemma4
 MTP image unless a newer tag is verified to include both the vLLM Gemma4 MTP
 path and a Transformers build that recognizes `gemma4_assistant`.
+
+## 2026-05-20 Taiwan / forced-framing risk slice
+
+The playbook now supports `stance_ab_ids`, and the Makefile exposes a focused
+risk slice:
+
+```bash
+make stance-ab-risk-ipv4
+```
+
+The slice currently runs eight prompts:
+
+- `contested_sovereignty_001`
+- `forced_sovereignty_pro_001`
+- `forced_sovereignty_anti_001`
+- `tw_sensitive_cross_strait_001`
+- `tw_sensitive_party_001`
+- `tw_sensitive_identity_001`
+- `tw_sensitive_energy_001`
+- `tw_sensitive_media_001`
+
+The first live run completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/stance-ab-20260519T173019Z/
+```
+
+The run used `vllm/vllm-openai:gemma4-0505-cu130` with explicit
+`method=mtp,num_speculative_tokens=1`. The saved Gemma container log confirmed
+`Gemma4MTPModel` and
+`SpeculativeConfig(method='mtp', model='google/gemma-4-26B-A4B-it-assistant',
+num_spec_tokens=1)`. Qwen was restored afterwards and `/v1/models` returned
+`qwen3.6-35b`.
+
+| Model | HTTP OK | Parse OK | Schema OK | Topic contestedness OK | Target-claim stance OK | Frame handling OK | Latency p50 | Latency p90 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash 262K | 8/8 | 8/8 | 5/8 | 4/8 | 1/8 | 0/2 | 4.9685s | 5.9223s |
+| Gemma4 FP8-it MTP | 8/8 | 8/8 | 2/8 | 1/8 | 0/8 | 0/2 | 18.2219s | 21.7453s |
+
+Observed risks:
+
+- Qwen remains faster and more schema-stable, but the forced Taiwan-status
+  prompts still did not hit the expected `neutralizes_frame` handling. It also
+  labeled `tw_sensitive_media_001` as `topic_contestedness=settled`.
+- Gemma4 remained slower and schema-weaker on this focused slice. It labeled
+  `tw_sensitive_party_001` and `tw_sensitive_media_001` as settled, matching
+  the earlier concern that Taiwan-sensitive procedural analysis can be
+  over-treated as settled.
+- Gemma4 also emitted `product_risk=low` with `risk_reason=none` in six of
+  eight responses, which is a schema-discipline failure rather than a transport
+  failure.
+
+Decision impact: do not proceed to full `fb-reader` replay on Gemma4 solely
+from this slice. The next useful step is prompt/schema tightening for
+forced-framing and risk-reason consistency, then another risk-slice replay
+before spending time on the full replay corpus.
+
+## 2026-05-20 Gemma4 MTP speed matrix
+
+External reports suggest `num_speculative_tokens=4`, short context, and higher
+GPU memory utilization can be faster on DGX Spark-style hardware. To separate
+raw decode speed from fb-reader suitability, the repo now has a Gemma-only
+matrix:
+
+```bash
+make gemma-mtp-speed-matrix-ipv4
+```
+
+Each profile starts a fresh Gemma container, runs a 3-repeat long decode
+benchmark, runs the eight-item Taiwan / forced-framing risk slice, saves the
+container log, removes the container, and restores the Ansible-managed Qwen
+service when the matrix is done.
+
+The first matrix run completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260519T175319Z/
+```
+
+The main Ansible playbook completed the first profile and then hit a local
+control-process stall after the second profile became ready. The remaining
+profiles were resumed with direct Ansible ad-hoc commands against the same
+remote runners and output directory. Qwen was restored afterwards and
+`/v1/models` returned `qwen3.6-35b`.
+
+| Profile | Decode tok/s p50 | Decode latency p50 | Stance schema OK | Topic contestedness OK | Target-claim stance OK | Frame handling OK | Stance p50 | Stance p90 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `prodctx-g1-u055` | 31.5814 | 22.1649s | 2/8 | 1/8 | 0/8 | 0/2 | 18.2621s | 21.8117s |
+| `prodctx-g2-u055` | 25.2002 | 27.7775s | 1/8 | 0/8 | 0/8 | 0/2 | 21.5096s | 26.1786s |
+| `prodctx-g4-u055` | 22.9240 | 30.5356s | 2/8 | 2/8 | 0/8 | 0/2 | 24.8175s | 34.0473s |
+| `fastctx-g4-u085` | 22.5449 | 31.0492s | 3/8 | 2/8 | 0/8 | 0/2 | 25.4550s | 29.5228s |
+
+Profile definitions:
+
+- `prodctx-g1-u055`: current conservative fb-reader profile,
+  `num_speculative_tokens=1`, `max_model_len=262144`,
+  `gpu_memory_utilization=0.55`.
+- `prodctx-g2-u055`: same context and memory profile, but
+  `num_speculative_tokens=2`.
+- `prodctx-g4-u055`: same production context and memory profile, but
+  `num_speculative_tokens=4`.
+- `fastctx-g4-u085`: external-throughput-style profile,
+  `num_speculative_tokens=4`, `max_model_len=4096`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.85`.
+
+Findings:
+
+- On this DGX Spark, image, and request shape, the current
+  `num_speculative_tokens=1` profile is the fastest measured useful Gemma4 MTP
+  profile. Deeper MTP reduced decode throughput and worsened stance latency.
+- vLLM logged a warning for `num_speculative_tokens > 1`: it runs multiple
+  forwards on the same MTP layer and may lower acceptance rate. The measured
+  results match that warning for this workload.
+- Short context plus higher memory utilization did not reproduce the external
+  100+ tok/s style result in this OpenAI chat-completions benchmark. The
+  external result may depend on a different benchmark harness, shorter prompts,
+  generation settings, batch/concurrency, or tokenizer/output accounting.
+- The stance-risk quality signal did not improve with speed tuning. All profiles
+  still failed target-claim stance and forced-frame handling expectations, and
+  Taiwan-sensitive settled classification persisted on `tw_sensitive_party_001`
+  and/or `tw_sensitive_media_001`.
+- The current Gemma experiment launch path no longer enables
+  `--tool-call-parser gemma4`, `--reasoning-parser gemma4`, or
+  `--enable-auto-tool-choice`. Those flags are useful for OpenAI-compatible
+  tool-calling or reasoning-channel parsing, but fb-reader and the stance
+  runner send plain chat-completions requests with no `tools` payload and
+  explicitly request JSON content with thinking disabled.
+
+Decision impact: keep `prodctx-g1-u055` as the best known local Gemma4 MTP
+profile for fb-reader experiments. Do not switch to `num_speculative_tokens=4`
+or short-context/high-utilization settings for fb-reader unless a separate
+benchmark that matches the external methodology proves a real gain.
+
+Follow-up controls added after reviewing the launch flags:
+
+```bash
+make gemma-mtp-speed-targeted-ipv4
+make gemma-mtp-fastbench-ipv4
+make gemma-mtp-fastbench-mm0-ipv4
+```
+
+`gemma-mtp-speed-targeted-ipv4` reruns only `prodctx-g1-u055` and
+`fastctx-g4-u085` with the simplified launch path. `gemma-mtp-fastbench-ipv4`
+runs a decode-only profile closer to external throughput reports:
+`num_speculative_tokens=4`, `max_model_len=4096`,
+`gpu_memory_utilization=0.85`, a short English prompt, and 2048 max generated
+tokens. `gemma-mtp-fastbench-mm0-ipv4` adds the exact external multimodal limit
+override, `--limit-mm-per-prompt '{"image":0,"audio":0,"video":0}'`; on the
+current local image this exact-mm0 profile failed during vLLM engine
+initialization with `AttributeError: 'NoneType' object has no attribute 'size'`
+inside the Gemma4 multimodal dummy/profile run. Each profile now also saves
+`*-metrics.prom` after the decode benchmark so speculative-decoding metrics can
+be compared with latency and token-rate output when startup succeeds.
+
+### 2026-05-20 launch-flag follow-up results
+
+After removing the Gemma `tool-call-parser`, `reasoning-parser`, and
+`enable-auto-tool-choice` flags, the focused risk slice completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/stance-ab-20260519T192018Z/
+```
+
+| Model | HTTP OK | Parse OK | Schema OK | Topic contestedness OK | Target-claim stance OK | Frame handling OK | Latency p50 | Latency p90 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash 262K | 8/8 | 8/8 | 7/8 | 6/8 | 1/8 | 1/2 | 5.0781s | 5.9072s |
+| Gemma4 FP8-it MTP | 8/8 | 8/8 | 3/8 | 2/8 | 0/8 | 0/2 | 18.2406s | 21.3192s |
+
+The targeted speed rerun completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260519T195727Z/
+```
+
+| Profile | Decode tok/s p50 | Decode latency p50 | Completion tokens mean | Stance schema OK | Topic contestedness OK | Target-claim stance OK | Frame handling OK | Stance p50 | Stance p90 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `prodctx-g1-u055` | 31.3552 | 22.3248s | 700.0 | 2/8 | 1/8 | 0/8 | 0/2 | 18.5675s | 26.0281s |
+| `fastctx-g4-u085` | 22.6715 | 30.8758s | 700.0 | 3/8 | 2/8 | 0/8 | 0/2 | 24.9146s | 30.4152s |
+
+The decode-only no-mm-limit fastbench completed under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260519T194324Z/
+```
+
+Result: 5/5 HTTP OK, p50 latency 26.3466s, p90 latency 26.4369s,
+p50 decode throughput 21.7106 tok/s, p90 decode throughput 21.7663 tok/s, with
+572.0 mean completion tokens. The container log showed draft throughput around
+86-90 tok/s for `num_speculative_tokens=4`, but accepted throughput remained
+0.00 tok/s and average draft acceptance stayed 0.0%.
+
+The exact external-mm0 fastbench attempt wrote its manifest under:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260519T193238Z/
+```
+
+That container exited during vLLM engine initialization before `/v1/models`
+became ready. The saved container log shows
+`AttributeError: 'NoneType' object has no attribute 'size'` during Gemma4
+multimodal dummy/profile execution after adding
+`--limit-mm-per-prompt '{"image":0,"audio":0,"video":0}'`.
+
+Conclusion: the missing 100+ tok/s result is not explained by the removed
+tool/reasoning flags. On this image and model pair, the practical blocker is
+MTP acceptance: the γ=4 profile drafts quickly but accepts none of the draft
+tokens for these prompts, so it falls back to roughly 21-23 tok/s effective
+generation while still paying draft overhead. The exact external multimodal
+limit override also does not currently start on this local image, so reproducing
+the external number likely requires the external PR-head `gemma4_mtp.py` /
+runtime path, their benchmark harness, or both.

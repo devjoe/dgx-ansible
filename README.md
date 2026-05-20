@@ -94,6 +94,11 @@ make status-vllm           # systemctl is-active vllm + GET /v1/models
 make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
 make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
+make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
+make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun
+make gemma-mtp-fastbench-ipv4  # external-methodology-style Gemma4 decode bench
+make gemma-mtp-fastbench-mm0-ipv4  # exact external mm0 Gemma4 decode bench
+make stance-ab-risk-ipv4   # Taiwan / forced-framing stance risk slice
 make unload                # POST keep_alive:0 to free VRAM
 make lint                  # ansible --syntax-check on all playbooks
 make deploy-obs            # stand up obs stack (needs .vault_pass + dgx.yml.vault)
@@ -127,6 +132,7 @@ For Ansible operations, use the direct IPv4 inventory when `gx10.local` mDNS is
 flaky:
 
 ```bash
+make stance-ab-risk-ipv4
 make stance-ab-ipv4
 make status-vllm-ipv4
 ```
@@ -140,6 +146,22 @@ make wifi-ipv4-only-ipv4
 
 Override `DGX_SSH_KEY` if the NVIDIA Sync key is stored outside the default
 macOS path.
+
+Gemma4 MTP speed experiments use a Gemma-only matrix so they do not repeat the
+Qwen baseline for every profile:
+
+```bash
+make gemma-mtp-speed-matrix-ipv4
+```
+
+For the tighter follow-up after launch-path changes, use the targeted rerun or
+the decode-only fastbench:
+
+```bash
+make gemma-mtp-speed-targeted-ipv4
+make gemma-mtp-fastbench-ipv4
+make gemma-mtp-fastbench-mm0-ipv4
+```
 
 `ASK_BECOME=1` prefix forces an interactive sudo password prompt (use it on
 the very first `make deploy` before NOPASSWD sudo is set up):

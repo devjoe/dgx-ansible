@@ -1,0 +1,144 @@
+---
+- name: Run Gemma MTP matrix profile {{ gemma_profile.id }}
+  block:
+    - name: Remove previous Gemma matrix container if present
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ gemma_mtp_container_name }}"
+      become: true
+      failed_when: false
+      changed_when: true
+
+    - name: Launch Gemma MTP matrix container {{ gemma_profile.id }}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        docker run -d \
+          --name {{ gemma_mtp_container_name }} \
+          --gpus all \
+          --ipc=host \
+          --network host \
+          -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+          -e HF_HUB_OFFLINE={{ gemma_mtp_hf_hub_offline | ternary('1','0') }} \
+          -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
+          -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
+          {% if gemma_mtp_patch_host_path | length > 0 -%}
+          -v {{ gemma_mtp_patch_host_path }}:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_mtp.py:ro \
+          {% endif -%}
+          {{ gemma_mtp_image }} \
+          {{ gemma_mtp_model }} \
+          --host 0.0.0.0 \
+          --port {{ vllm_port }} \
+          --served-model-name {{ gemma_mtp_served_name }} \
+          --gpu-memory-utilization {{ gemma_profile.gpu_memory_utilization }} \
+          --kv-cache-dtype {{ gemma_profile.kv_cache_dtype | default(gemma_mtp_kv_cache_dtype) }} \
+          --max-model-len {{ gemma_profile.max_model_len }} \
+          --max-num-seqs {{ gemma_profile.max_num_seqs | default(gemma_mtp_max_num_seqs) }} \
+          --max-num-batched-tokens {{ gemma_profile.max_num_batched_tokens | default(gemma_mtp_max_num_batched_tokens) }} \
+          --tensor-parallel-size 1 \
+          --trust-remote-code \
+          --enable-chunked-prefill \
+          --enable-prefix-caching \
+          {% if (gemma_profile.limit_mm_per_prompt | default(gemma_mtp_limit_mm_per_prompt)) | length > 0 -%}
+          --limit-mm-per-prompt '{{ gemma_profile.limit_mm_per_prompt | default(gemma_mtp_limit_mm_per_prompt) }}' \
+          {% endif -%}
+          --speculative-config '{"method":"mtp","model":"{{ gemma_mtp_assistant_model }}","num_speculative_tokens":{{ gemma_profile.num_speculative_tokens }}}'
+      args:
+        executable: /bin/bash
+      become: true
+      changed_when: true
+
+    - name: Wait for Gemma profile API {{ gemma_profile.id }}
+      ansible.builtin.uri:
+        url: "{{ gemma_mtp_base_url }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: gemma_profile_models
+      retries: "{{ gemma_mtp_readiness_retries }}"
+      delay: "{{ gemma_mtp_readiness_delay }}"
+      until: gemma_profile_models.status == 200
+
+    - name: Run decode speed bench for {{ gemma_profile.id }}
+      ansible.builtin.command:
+        argv: "{{ [
+          '/usr/bin/python3',
+          gemma_mtp_decode_runner,
+          '--base-url',
+          gemma_mtp_base_url,
+          '--model',
+          gemma_mtp_served_name,
+          '--label',
+          gemma_profile.id,
+          '--output',
+          gemma_mtp_output_dir + '/' + gemma_profile.id + '-decode.json',
+          '--repeats',
+          gemma_profile.decode_repeats | default(gemma_mtp_decode_repeats) | string,
+          '--timeout',
+          gemma_mtp_timeout | string,
+          '--max-tokens',
+          gemma_profile.decode_max_tokens | default(gemma_mtp_decode_max_tokens) | string
+        ] + (['--prompt', gemma_profile.decode_prompt] if gemma_profile.decode_prompt is defined else []) }}"
+      changed_when: true
+
+    - name: Capture vLLM metrics for {{ gemma_profile.id }}
+      ansible.builtin.uri:
+        url: "{{ gemma_mtp_base_url }}/metrics"
+        return_content: true
+        timeout: 10
+      register: gemma_profile_metrics
+      failed_when: false
+      changed_when: false
+
+    - name: Save vLLM metrics for {{ gemma_profile.id }}
+      ansible.builtin.copy:
+        dest: "{{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-metrics.prom"
+        content: "{{ gemma_profile_metrics.content }}"
+        mode: "0644"
+      when: gemma_profile_metrics.status | default(0) == 200
+
+    - name: Run stance risk slice for {{ gemma_profile.id }}
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ gemma_mtp_stance_runner }}"
+          - --base-url
+          - "{{ gemma_mtp_base_url }}"
+          - --model
+          - "{{ gemma_mtp_served_name }}"
+          - --label
+          - "{{ gemma_profile.id }}"
+          - --corpus
+          - "{{ gemma_mtp_corpus }}"
+          - --output
+          - "{{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-stance.json"
+          - --timeout
+          - "{{ gemma_mtp_timeout | string }}"
+          - --max-tokens
+          - "{{ gemma_mtp_stance_max_tokens | string }}"
+          - --ids
+          - "{{ gemma_mtp_risk_ids }}"
+      changed_when: true
+      when: gemma_profile.run_stance | default(true) | bool
+  rescue:
+    - name: Save Gemma profile failure logs for {{ gemma_profile.id }}
+      ansible.builtin.shell: |
+        docker logs --tail 1000 {{ gemma_mtp_container_name }} > {{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-container.log 2>&1 || true
+      become: true
+      failed_when: false
+      changed_when: false
+
+    - name: Fail Gemma profile with log path
+      ansible.builtin.fail:
+        msg: "Gemma MTP profile {{ gemma_profile.id }} failed. Log: {{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-container.log"
+  always:
+    - name: Save Gemma profile logs for {{ gemma_profile.id }}
+      ansible.builtin.shell: |
+        docker logs --tail 1000 {{ gemma_mtp_container_name }} > {{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-container.log 2>&1 || true
+      become: true
+      failed_when: false
+      changed_when: false
+
+    - name: Stop Gemma matrix container for {{ gemma_profile.id }}
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ gemma_mtp_container_name }}"
+      become: true
+      failed_when: false
+      changed_when: true

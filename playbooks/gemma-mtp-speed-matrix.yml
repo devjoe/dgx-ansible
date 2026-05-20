@@ -1,0 +1,196 @@
+---
+# Run Gemma4 MTP speed/quality profiles without repeating the Qwen baseline.
+#
+# Each profile gets a fresh Gemma container, a pure decode benchmark, the
+# Taiwan/forced-framing risk slice, saved container logs, and cleanup. The
+# Ansible-managed Qwen vLLM service is restored in `always`.
+
+- name: Run Gemma4 MTP speed matrix on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    gemma_mtp_run_id: "{{ gemma_mtp_run_id_fixed }}"
+    gemma_mtp_remote_dir: "{{ remote_workdir }}/gemma-mtp-speed"
+    gemma_mtp_output_dir: "{{ remote_workdir }}/benchmarks/gemma-mtp-speed-{{ gemma_mtp_run_id }}"
+    gemma_mtp_decode_runner: "{{ gemma_mtp_remote_dir }}/run_openai_decode_bench.py"
+    gemma_mtp_stance_runner: "{{ gemma_mtp_remote_dir }}/run_stance_bias_eval.py"
+    gemma_mtp_corpus: "{{ gemma_mtp_remote_dir }}/stance_bias_corpus.json"
+    gemma_mtp_base_url: "http://localhost:{{ vllm_port }}"
+    gemma_mtp_timeout: 240
+    gemma_mtp_decode_repeats: 3
+    gemma_mtp_decode_max_tokens: 700
+    gemma_mtp_stance_max_tokens: 2200
+    gemma_mtp_profile_ids: ""
+    gemma_mtp_limit_mm_per_prompt: ""
+    gemma_mtp_risk_ids: >-
+      contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+
+    gemma_mtp_container_name: "gemma4-mtp-matrix"
+    gemma_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
+    gemma_mtp_model: "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic"
+    gemma_mtp_assistant_model: "google/gemma-4-26B-A4B-it-assistant"
+    gemma_mtp_served_name: "gemma4-fp8-mtp"
+    gemma_mtp_hf_hub_offline: true
+    gemma_mtp_kv_cache_dtype: "fp8"
+    gemma_mtp_max_num_seqs: 4
+    gemma_mtp_max_num_batched_tokens: 16384
+    gemma_mtp_patch_host_path: ""
+    gemma_mtp_readiness_retries: 72
+    gemma_mtp_readiness_delay: 5
+
+    gemma_mtp_profiles:
+      - id: prodctx-g1-u055
+        description: "Current conservative fb-reader profile"
+        num_speculative_tokens: 1
+        max_model_len: 262144
+        gpu_memory_utilization: "0.55"
+      - id: prodctx-g2-u055
+        description: "Production context, deeper MTP"
+        num_speculative_tokens: 2
+        max_model_len: 262144
+        gpu_memory_utilization: "0.55"
+      - id: prodctx-g4-u055
+        description: "Production context, vLLM-recommended MTP depth"
+        num_speculative_tokens: 4
+        max_model_len: 262144
+        gpu_memory_utilization: "0.55"
+      - id: fastctx-g4-u085
+        description: "External-throughput-style short context"
+        num_speculative_tokens: 4
+        max_model_len: 4096
+        max_num_batched_tokens: 4096
+        gpu_memory_utilization: "0.85"
+      - id: external-fastbench-g4-u085
+        description: "External-methodology-style decode-only fastbench without multimodal limit override"
+        num_speculative_tokens: 4
+        max_model_len: 4096
+        max_num_batched_tokens: 4096
+        gpu_memory_utilization: "0.85"
+        run_stance: false
+        decode_repeats: 5
+        decode_max_tokens: 2048
+        decode_prompt: "Write a concise technical summary of speculative decoding for transformer language models."
+      - id: external-fastbench-mm0-g4-u085
+        description: "External article exact mm0 decode-only fastbench"
+        num_speculative_tokens: 4
+        max_model_len: 4096
+        max_num_batched_tokens: 4096
+        gpu_memory_utilization: "0.85"
+        limit_mm_per_prompt: '{"image":0,"audio":0,"video":0}'
+        run_stance: false
+        decode_repeats: 5
+        decode_max_tokens: 2048
+        decode_prompt: "Write a concise technical summary of speculative decoding for transformer language models."
+  tasks:
+    - name: Set stable matrix run id
+      ansible.builtin.set_fact:
+        gemma_mtp_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Select requested Gemma MTP profiles
+      ansible.builtin.set_fact:
+        gemma_mtp_selected_profile_ids: "{{ gemma_mtp_profile_ids.split(',') | map('trim') | reject('equalto', '') | list }}"
+        gemma_mtp_selected_profiles: >-
+          {{
+            gemma_mtp_profiles
+            if (gemma_mtp_profile_ids | length == 0)
+            else (gemma_mtp_profiles | selectattr('id', 'in', gemma_mtp_profile_ids.split(',') | map('trim') | reject('equalto', '') | list) | list)
+          }}
+
+    - name: Verify requested Gemma MTP profiles exist
+      ansible.builtin.assert:
+        that:
+          - gemma_mtp_selected_profiles | length > 0
+          - gemma_mtp_selected_profiles | length == gemma_mtp_selected_profile_ids | length or gemma_mtp_selected_profile_ids | length == 0
+        fail_msg: "Unknown or empty gemma_mtp_profile_ids={{ gemma_mtp_profile_ids }}"
+
+    - name: Ensure remote Gemma MTP matrix dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ gemma_mtp_remote_dir }}"
+        - "{{ gemma_mtp_output_dir }}"
+
+    - name: Copy decode speed runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_openai_decode_bench.py"
+        dest: "{{ gemma_mtp_decode_runner }}"
+        mode: "0755"
+
+    - name: Copy stance runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval.py"
+        dest: "{{ gemma_mtp_stance_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+        dest: "{{ gemma_mtp_corpus }}"
+        mode: "0644"
+
+    - name: Write matrix manifest
+      ansible.builtin.copy:
+        dest: "{{ gemma_mtp_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': gemma_mtp_run_id,
+          'image': gemma_mtp_image,
+          'model': gemma_mtp_model,
+          'assistant_model': gemma_mtp_assistant_model,
+          'profiles': gemma_mtp_selected_profiles,
+          'risk_ids': gemma_mtp_risk_ids,
+          'decode_repeats': gemma_mtp_decode_repeats,
+          'decode_max_tokens': gemma_mtp_decode_max_tokens,
+          'stance_max_tokens': gemma_mtp_stance_max_tokens
+        } | to_nice_json }}"
+
+    - name: Run Gemma matrix and restore Qwen afterwards
+      block:
+        - name: Stop Qwen vLLM before Gemma matrix
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Run Gemma profile matrix
+          ansible.builtin.include_tasks: tasks/gemma-mtp-profile.yml
+          loop: "{{ gemma_mtp_selected_profiles }}"
+          loop_control:
+            loop_var: gemma_profile
+            label: "{{ gemma_profile.id }}"
+      always:
+        - name: Remove Gemma matrix container if still present
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ gemma_mtp_base_url }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Show Gemma MTP matrix output directory
+      ansible.builtin.debug:
+        msg: "Gemma MTP matrix outputs: {{ gemma_mtp_output_dir }}"

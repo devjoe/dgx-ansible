@@ -7,10 +7,11 @@ INVENTORY ?= inventory.ini
 DGX_SSH_KEY ?= $(HOME)/Library/Application Support/NVIDIA/Sync/config/nvsync.key
 ANSIBLE_EXTRA ?=
 ANSIBLE_ARGS := -i $(INVENTORY) $(ANSIBLE_EXTRA)
+STANCE_AB_RISK_IDS ?= contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf stance-ab stance-ab-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -36,11 +37,41 @@ benchmark-vllm:  ## Sanity-check vLLM Tier B (text + data-URI image)
 benchmark-vllm-perf:  ## Measure vLLM perf matrix (prefill/decode × concurrency)
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark-vllm-perf.yml
 
+gemma-mtp-speed-matrix:  ## Run Gemma4 MTP decode + stance risk speed profiles
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml
+
+gemma-mtp-speed-matrix-ipv4:  ## Run Gemma4 MTP speed profiles through direct IPv4
+	$(MAKE) gemma-mtp-speed-matrix INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+gemma-mtp-speed-targeted:  ## Run Gemma4 prodctx-g1 and fastctx-g4 after launch-path changes
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=prodctx-g1-u055,fastctx-g4-u085'
+
+gemma-mtp-speed-targeted-ipv4:  ## Run targeted Gemma4 speed profiles through direct IPv4
+	$(MAKE) gemma-mtp-speed-targeted INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+gemma-mtp-fastbench:  ## Run external-methodology-style Gemma4 decode-only fastbench
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=external-fastbench-g4-u085'
+
+gemma-mtp-fastbench-ipv4:  ## Run Gemma4 fastbench through direct IPv4
+	$(MAKE) gemma-mtp-fastbench INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+gemma-mtp-fastbench-mm0:  ## Run exact external mm0 Gemma4 fastbench profile
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=external-fastbench-mm0-g4-u085'
+
+gemma-mtp-fastbench-mm0-ipv4:  ## Run exact external mm0 fastbench through direct IPv4
+	$(MAKE) gemma-mtp-fastbench-mm0 INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
 stance-ab:  ## Run Qwen DFlash vs Gemma4 MTP stance/uncertainty A/B on DGX
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml
 
 stance-ab-ipv4:  ## Run stance A/B through the direct IPv4 fallback inventory
 	$(MAKE) stance-ab INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+stance-ab-risk:  ## Run only Taiwan / forced-framing stance risk prompts
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml --extra-vars 'stance_ab_ids=$(STANCE_AB_RISK_IDS)'
+
+stance-ab-risk-ipv4:  ## Run the stance risk slice through the direct IPv4 fallback inventory
+	$(MAKE) stance-ab-risk INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 wifi-ipv4-only:  ## Keep DGX outward Wi-Fi on IPv4 only; disables IPv6 on 10Design2
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/dgx-wifi-ipv4-only.yml
@@ -70,6 +101,7 @@ lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark-vllm.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark-vllm-perf.yml --syntax-check
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/deploy-observability.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/os-preflight.yml --syntax-check
