@@ -1,0 +1,377 @@
+---
+# Run a controlled fb-reader Tier B replay plus stance-v2 probe for the current
+# Qwen service and the Gemma4 FP8-it MTP PR-head candidate. The Ansible-managed
+# Qwen vLLM service is restored in `always`.
+
+- name: Run fb-reader Qwen vs Gemma4 PR-head A/B on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    fb_reader_ab_run_id: "{{ fb_reader_ab_run_id_fixed }}"
+    fb_reader_ab_remote_dir: "{{ remote_workdir }}/fb-reader-ab"
+    fb_reader_ab_remote_output_dir: "{{ remote_workdir }}/benchmarks/fb-reader-ab-{{ fb_reader_ab_run_id }}"
+    fb_reader_ab_stance_runner: "{{ fb_reader_ab_remote_dir }}/run_stance_bias_eval_v2.py"
+    fb_reader_ab_stance_corpus: "{{ fb_reader_ab_remote_dir }}/stance_bias_corpus.json"
+    fb_reader_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
+    fb_reader_ab_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_port }}"
+    fb_reader_ab_fb_reader_path: "/Users/devjoe/Projects/fb-reader"
+    fb_reader_ab_corpus: "tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json"
+    fb_reader_ab_local_output_dir: "{{ fb_reader_ab_fb_reader_path }}/tmp/tier-b-replay/ab-{{ fb_reader_ab_run_id }}"
+    fb_reader_ab_limit: ""
+    fb_reader_ab_timeout_ms: 180000
+    fb_reader_ab_rebuild_body: false
+    fb_reader_ab_stance_ids: >-
+      contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+    fb_reader_ab_stance_timeout: 240
+    fb_reader_ab_stance_max_tokens: 900
+
+    gemma4_mtp_container_name: "gemma4-mtp-fb-reader-ab"
+    gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
+    gemma4_mtp_model: "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic"
+    gemma4_mtp_assistant_model: "google/gemma-4-26B-A4B-it-assistant"
+    gemma4_mtp_served_name: "gemma4-fp8-mtp"
+    gemma4_mtp_num_speculative_tokens: 4
+    gemma4_mtp_speculative_config: '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+    gemma4_mtp_hf_hub_offline: true
+    gemma4_mtp_gpu_memory_utilization: "0.55"
+    gemma4_mtp_kv_cache_dtype: "fp8"
+    gemma4_mtp_max_model_len: 262144
+    gemma4_mtp_max_num_seqs: 4
+    gemma4_mtp_max_num_batched_tokens: 16384
+    gemma4_mtp_patch_url: ""
+    gemma4_mtp_patch_host_path: ""
+    gemma4_mtp_readiness_retries: 72
+    gemma4_mtp_readiness_delay: 5
+  tasks:
+    - name: Set stable A/B run id
+      ansible.builtin.set_fact:
+        fb_reader_ab_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure remote fb-reader A/B dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ fb_reader_ab_remote_dir }}"
+        - "{{ fb_reader_ab_remote_output_dir }}"
+
+    - name: Ensure Gemma patch directory exists
+      ansible.builtin.file:
+        path: "{{ gemma4_mtp_patch_host_path | dirname }}"
+        state: directory
+        mode: "0755"
+      when: gemma4_mtp_patch_host_path | length > 0
+
+    - name: Ensure local fb-reader A/B output dir exists
+      ansible.builtin.file:
+        path: "{{ fb_reader_ab_local_output_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ fb_reader_ab_stance_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+        dest: "{{ fb_reader_ab_stance_corpus }}"
+        mode: "0644"
+
+    - name: Fetch Gemma MTP PR-head patch file to DGX
+      ansible.builtin.get_url:
+        url: "{{ gemma4_mtp_patch_url }}"
+        dest: "{{ gemma4_mtp_patch_host_path }}"
+        mode: "0644"
+      when:
+        - gemma4_mtp_patch_url | length > 0
+        - gemma4_mtp_patch_host_path | length > 0
+
+    - name: Write A/B manifest
+      ansible.builtin.copy:
+        dest: "{{ fb_reader_ab_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': fb_reader_ab_run_id,
+          'controller_endpoint': fb_reader_ab_base_url_controller,
+          'remote_endpoint': fb_reader_ab_base_url_remote,
+          'fb_reader_path': fb_reader_ab_fb_reader_path,
+          'fb_reader_corpus': fb_reader_ab_corpus,
+          'local_output_dir': fb_reader_ab_local_output_dir,
+          'qwen_model': vllm_served_name,
+          'gemma_model': gemma4_mtp_model,
+          'gemma_assistant_model': gemma4_mtp_assistant_model,
+          'gemma_served_name': gemma4_mtp_served_name,
+          'gemma_image': gemma4_mtp_image,
+          'gemma_num_speculative_tokens': gemma4_mtp_num_speculative_tokens,
+          'gemma_patch_url': gemma4_mtp_patch_url,
+          'gemma_patch_host_path': gemma4_mtp_patch_host_path,
+          'stance_ids': fb_reader_ab_stance_ids
+        } | to_nice_json }}"
+
+    - name: Confirm Qwen vLLM is answering before baseline
+      ansible.builtin.uri:
+        url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run fb-reader replay against Qwen baseline
+      ansible.builtin.command:
+        argv: "{{ [
+          'npx',
+          'tsx',
+          'scripts/tier-b-replay-corpus.ts',
+          '--corpus',
+          fb_reader_ab_corpus,
+          '--endpoint',
+          fb_reader_ab_base_url_controller,
+          '--model',
+          vllm_served_name,
+          '--out',
+          fb_reader_ab_local_output_dir + '/qwen-dflash.json',
+          '--timeout-ms',
+          fb_reader_ab_timeout_ms | string
+        ] + (['--limit', fb_reader_ab_limit | string] if fb_reader_ab_limit | string | length > 0 else [])
+          + (['--rebuild-body'] if fb_reader_ab_rebuild_body | bool else []) }}"
+        chdir: "{{ fb_reader_ab_fb_reader_path }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Run stance-v2 against Qwen baseline
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ fb_reader_ab_stance_runner }}"
+          - --base-url
+          - "{{ fb_reader_ab_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash
+          - --corpus
+          - "{{ fb_reader_ab_stance_corpus }}"
+          - --output
+          - "{{ fb_reader_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+          - --timeout
+          - "{{ fb_reader_ab_stance_timeout | string }}"
+          - --max-tokens
+          - "{{ fb_reader_ab_stance_max_tokens | string }}"
+          - --ids
+          - "{{ fb_reader_ab_stance_ids }}"
+      changed_when: true
+
+    - name: Run Gemma4 candidate and restore Qwen afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before Gemma4 launch
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Remove previous Gemma4 fb-reader A/B container if present
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Launch Gemma4 FP8-it MTP PR-head container
+          ansible.builtin.shell: |
+            set -euo pipefail
+            docker run -d \
+              --name {{ gemma4_mtp_container_name }} \
+              --gpus all \
+              --ipc=host \
+              --network host \
+              -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+              -e HF_HUB_OFFLINE={{ gemma4_mtp_hf_hub_offline | ternary('1','0') }} \
+              -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
+              -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
+              {% if gemma4_mtp_patch_host_path | length > 0 -%}
+              -v {{ gemma4_mtp_patch_host_path }}:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_mtp.py:ro \
+              {% endif -%}
+              {{ gemma4_mtp_image }} \
+              {{ gemma4_mtp_model }} \
+              --host 0.0.0.0 \
+              --port {{ vllm_port }} \
+              --served-model-name {{ gemma4_mtp_served_name }} \
+              --gpu-memory-utilization {{ gemma4_mtp_gpu_memory_utilization }} \
+              --kv-cache-dtype {{ gemma4_mtp_kv_cache_dtype }} \
+              --max-model-len {{ gemma4_mtp_max_model_len }} \
+              --max-num-seqs {{ gemma4_mtp_max_num_seqs }} \
+              --max-num-batched-tokens {{ gemma4_mtp_max_num_batched_tokens }} \
+              --tensor-parallel-size 1 \
+              --trust-remote-code \
+              --enable-chunked-prefill \
+              --enable-prefix-caching \
+              --speculative-config '{{ gemma4_mtp_speculative_config }}'
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for Gemma4 MTP readiness with logs on failure
+          block:
+            - name: Wait for Gemma4 MTP /v1/models
+              ansible.builtin.uri:
+                url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+                return_content: true
+                timeout: 5
+              register: gemma_models
+              retries: "{{ gemma4_mtp_readiness_retries }}"
+              delay: "{{ gemma4_mtp_readiness_delay }}"
+              until: gemma_models.status == 200
+          rescue:
+            - name: Save Gemma4 readiness failure logs
+              ansible.builtin.shell: |
+                docker logs --tail 1000 {{ gemma4_mtp_container_name }} > {{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log 2>&1 || true
+              become: true
+              failed_when: false
+              changed_when: false
+
+            - name: Fail with Gemma4 readiness context
+              ansible.builtin.fail:
+                msg: "Gemma4 MTP did not become ready. Log: {{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log"
+
+        - name: Run fb-reader replay against Gemma4 candidate
+          ansible.builtin.command:
+            argv: "{{ [
+              'npx',
+              'tsx',
+              'scripts/tier-b-replay-corpus.ts',
+              '--corpus',
+              fb_reader_ab_corpus,
+              '--endpoint',
+              fb_reader_ab_base_url_controller,
+              '--model',
+              gemma4_mtp_served_name,
+              '--out',
+              fb_reader_ab_local_output_dir + '/gemma4-fp8-mtp.json',
+              '--timeout-ms',
+              fb_reader_ab_timeout_ms | string
+            ] + (['--limit', fb_reader_ab_limit | string] if fb_reader_ab_limit | string | length > 0 else [])
+              + (['--rebuild-body'] if fb_reader_ab_rebuild_body | bool else []) }}"
+            chdir: "{{ fb_reader_ab_fb_reader_path }}"
+          delegate_to: localhost
+          changed_when: true
+
+        - name: Capture Gemma4 vLLM metrics after fb-reader replay
+          ansible.builtin.uri:
+            url: "{{ fb_reader_ab_base_url_remote }}/metrics"
+            return_content: true
+            timeout: 10
+          register: gemma_metrics
+          failed_when: false
+          changed_when: false
+
+        - name: Save Gemma4 vLLM metrics
+          ansible.builtin.copy:
+            dest: "{{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-metrics.prom"
+            content: "{{ gemma_metrics.content }}"
+            mode: "0644"
+          when: gemma_metrics.status | default(0) == 200
+
+        - name: Run stance-v2 against Gemma4 candidate
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - "{{ fb_reader_ab_stance_runner }}"
+              - --base-url
+              - "{{ fb_reader_ab_base_url_remote }}"
+              - --model
+              - "{{ gemma4_mtp_served_name }}"
+              - --label
+              - gemma4-fp8-mtp
+              - --corpus
+              - "{{ fb_reader_ab_stance_corpus }}"
+              - --output
+              - "{{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-stance-v2.json"
+              - --timeout
+              - "{{ fb_reader_ab_stance_timeout | string }}"
+              - --max-tokens
+              - "{{ fb_reader_ab_stance_max_tokens | string }}"
+              - --ids
+              - "{{ fb_reader_ab_stance_ids }}"
+          changed_when: true
+      always:
+        - name: Save Gemma4 fb-reader A/B container logs
+          ansible.builtin.shell: |
+            docker logs --tail 1000 {{ gemma4_mtp_container_name }} > {{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log 2>&1 || true
+          become: true
+          failed_when: false
+          changed_when: false
+
+        - name: Stop Gemma4 fb-reader A/B container
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Fetch remote stance-v2 and Gemma runtime artifacts
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ fb_reader_ab_local_output_dir }}/"
+        flat: true
+      loop:
+        - "{{ fb_reader_ab_remote_output_dir }}/manifest.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-stance-v2.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log"
+        - "{{ fb_reader_ab_remote_output_dir }}/gemma4-fp8-mtp-metrics.prom"
+      failed_when: false
+
+    - name: Summarize local fb-reader A/B artifacts
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ playbook_dir }}/../scripts/summarize_fb_reader_ab.py"
+          - --qwen-replay
+          - "{{ fb_reader_ab_local_output_dir }}/qwen-dflash.json"
+          - --gemma-replay
+          - "{{ fb_reader_ab_local_output_dir }}/gemma4-fp8-mtp.json"
+          - --qwen-stance
+          - "{{ fb_reader_ab_local_output_dir }}/qwen-dflash-stance-v2.json"
+          - --gemma-stance
+          - "{{ fb_reader_ab_local_output_dir }}/gemma4-fp8-mtp-stance-v2.json"
+          - --output
+          - "{{ fb_reader_ab_local_output_dir }}/summary.json"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Show fb-reader A/B output directories
+      ansible.builtin.debug:
+        msg:
+          - "Local fb-reader A/B outputs: {{ fb_reader_ab_local_output_dir }}"
+          - "Remote runtime outputs: {{ fb_reader_ab_remote_output_dir }}"

@@ -94,6 +94,7 @@ make status-vllm           # systemctl is-active vllm + GET /v1/models
 make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
 make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
+make fb-reader-ab-prhead-ipv4  # Qwen vs Gemma4 PR-head Tier B replay + stance-v2
 make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
 make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun
 make gemma-mtp-speed-targeted-prhead-ipv4  # PR-head speed/stance profiles
@@ -135,10 +136,17 @@ For Ansible operations, use the direct IPv4 inventory when `gx10.local` mDNS is
 flaky:
 
 ```bash
+make fb-reader-ab-prhead-ipv4
 make stance-ab-risk-ipv4
 make stance-ab-ipv4
 make status-vllm-ipv4
 ```
+
+`fb-reader-ab-prhead` runs the captured fb-reader Tier B corpus against the
+current Qwen service, switches DGX to the Gemma4 FP8-it MTP PR-head candidate,
+runs the same replay, runs stance-v2 probes for both models, saves Gemma
+runtime logs/metrics, and restores Qwen afterwards. `stance-ab-risk` remains the
+smaller schema/self-audit risk slice for fast iteration.
 
 The outward Wi-Fi profile `10Design2` should stay IPv4-only because the
 upstream router has been unstable on IPv6:

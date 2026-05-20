@@ -1,6 +1,6 @@
 # DGX Spark vLLM Model Selection (fb-reader + OpenCode)
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 
@@ -161,6 +161,57 @@ Gemma4 FP8-it + MTP is much better and should stay on the candidate list, but
 does not yet replace Qwen as the single shared default because median latency
 is still worse, the serving path requires a preview Docker image plus a patched
 MTP file, and the assistant is text-only for multimodal requests.
+
+### B2. RedHatAI Gemma4 FP8-it MTP + PR-head, repeat fb-reader A/B
+
+Run:
+
+```bash
+make fb-reader-ab-prhead-ipv4
+```
+
+Artifacts:
+
+- Local:
+  `fb-reader/tmp/tier-b-replay/ab-20260520T070828Z/`
+- Remote:
+  `/home/devjoe/Projects/Ollama/benchmarks/fb-reader-ab-20260520T070828Z/`
+
+Runtime:
+
+- Docker image: `vllm/vllm-openai:gemma4-0505-cu130`
+- PR-head `gemma4_mtp.py` bind-mounted from vLLM SHA
+  `d8b3826648da6b407f8c55457a2103be9aeb5d83`
+- target: `RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic`
+- assistant: `google/gemma-4-26B-A4B-it-assistant`
+- `num_speculative_tokens=4`, `max_model_len=262144`,
+  `gpu_memory_utilization=0.55`, `kv_cache_dtype=fp8`
+
+Replay result:
+
+| Model | HTTP OK | Parse OK | Schema OK | all p50 | all p90 | image p50 | image p90 | text p50 | text p90 | completion tok/s p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash | 50/50 | 49/50 | 49/50 | 2.943s | 5.5642s | 3.110s | 5.9957s | 1.955s | 2.0829s | 94.524 |
+| Gemma4 FP8-it MTP PR-head | 50/50 | 50/50 | 50/50 | 3.793s | 4.9724s | 3.976s | 5.2497s | 2.9015s | 3.7525s | 67.8447 |
+
+Quality / risk probe result from stance-v2, which separates target answer
+generation from deterministic stance/frame evaluation:
+
+| Model | Compatible topic | Compatible stance | Compatible forced-frame | Over-settlement | Taiwan-sensitive over-settlement |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash | 7/8 | 7/8 | 2/2 | 1 | 0 |
+| Gemma4 FP8-it MTP PR-head | 4/8 | 4/8 | 2/2 | 4 | 2 |
+
+Takeaway:
+
+- Gemma PR-head is now operationally serious: it completed the real replay with
+  50/50 schema OK and better p90 than Qwen in this run.
+- Qwen remains the better default for median latency and text-only latency.
+- The main remaining Gemma risk is not forced-frame adoption; stance-v2 still
+  flags Taiwan-sensitive over-settlement, especially cross-strait / party-style
+  prompts.
+- Qwen's only replay failure was one truncated 600-token output, consistent
+  with earlier replay behavior rather than a service failure.
 
 ## Gemma4 MTP Follow-up (2026-05-07)
 

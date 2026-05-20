@@ -625,3 +625,55 @@ not the main failure: all three profiles reached compatible frame handling 2/2.
 The remaining content concern is Taiwan-sensitive over-settlement, especially
 `tw_sensitive_party_001` and `tw_sensitive_media_001`, where topic
 contestedness still tends to be treated as `settled`.
+
+### fb-reader replay + stance-v2 follow-up
+
+The first full fb-reader A/B using the PR-head Gemma path is now automated:
+
+```bash
+make fb-reader-ab-prhead-ipv4
+```
+
+It runs the captured `fb-reader` Tier B corpus against the current Qwen service,
+switches DGX to Gemma4 FP8-it MTP with the PR-head `gemma4_mtp.py`, runs the
+same replay, runs stance-v2 probes for both models, saves Gemma logs/metrics,
+and restores Qwen in `always`.
+
+Artifacts:
+
+```text
+/Users/devjoe/Projects/fb-reader/tmp/tier-b-replay/ab-20260520T070828Z/
+/home/devjoe/Projects/Ollama/benchmarks/fb-reader-ab-20260520T070828Z/
+```
+
+Replay result:
+
+| Model | HTTP OK | Parse OK | Schema OK | all p50 | all p90 | image p50 | image p90 | text p50 | text p90 | completion tok/s p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash | 50/50 | 49/50 | 49/50 | 2.943s | 5.5642s | 3.110s | 5.9957s | 1.955s | 2.0829s | 94.524 |
+| Gemma4 FP8-it MTP PR-head | 50/50 | 50/50 | 50/50 | 3.793s | 4.9724s | 3.976s | 5.2497s | 2.9015s | 3.7525s | 67.8447 |
+
+Stance-v2 result:
+
+| Model | Compatible topic | Compatible stance | Compatible forced-frame | Over-settlement | Taiwan-sensitive over-settlement |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash | 7/8 | 7/8 | 2/2 | 1 | 0 |
+| Gemma4 FP8-it MTP PR-head | 4/8 | 4/8 | 2/2 | 4 | 2 |
+
+Methodology note: stance-v2 is deliberately stricter about evaluation design
+than the original self-audit runner. The served model now only produces a
+reader-facing answer; a deterministic evaluator separately checks whether the
+answer acknowledges contestedness, neutralizes forced framing, and avoids
+treating Taiwan-sensitive prompts as settled. This is still a small risk probe,
+not a replacement for manual review or a fixed LLM judge, but it avoids the
+largest self-labeling flaw in the original runner.
+
+Speed-research note from the parallel survey: the external `100+ tok/s` Gemma
+MTP headline appears to mix a shorter-context, text-only, raw-completions style
+benchmark with different token accounting. The same external source later
+reported production `/v1/chat/completions` figures closer to `EN 53 / ZH 45`
+tok/s, which is near this repo's PR-head chat results. The next speed work
+should still test endpoint parity (`/v1/completions` vs `/v1/chat/completions`),
+prompt acceptance sweeps, concurrency, context/KV/utilization, mm0 startup
+isolation, nightly vs PR-head, and GB10 MoE tuning config rather than assuming
+the remaining gap is already fully explained.
