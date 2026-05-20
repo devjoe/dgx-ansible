@@ -98,6 +98,10 @@ make fb-reader-ab-prhead-ipv4  # Qwen vs Gemma4 PR-head Tier B replay + stance-v
 make fb-reader-ab-prhead-full-stance-ipv4  # same A/B with all 21 stance-v2 items
 make news-context-stance-ab-prhead-ipv4  # Trump/Xi current-news stance-v2 A/B
 make news-fulltext-stance-ab-prhead-ipv4  # runtime-fetched fulltext news stance A/B
+make news-fulltext-strict-stance-ab-prhead-ipv4  # fulltext A/B with strict source-grounding contract
+make news-fulltext-prepass-stance-ab-prhead-ipv4  # fulltext A/B with claim verifier prepass
+make news-fulltext10-prepass-stance-ab-prhead-ipv4  # 10-article fulltext A/B with claim verifier prepass
+make ds4-dir-steering-ab-prhead-ipv4  # DS4 contested/settled calibration A/B
 make gemma-mtp-endpoint-parity-prhead-ipv4  # PR-head chat vs raw completions parity
 make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
 make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun

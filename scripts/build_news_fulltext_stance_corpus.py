@@ -21,6 +21,48 @@ from typing import Any
 
 USER_AGENT = "Mozilla/5.0 (compatible; fb-reader-stance-eval/1.0)"
 
+SOURCE_GROUNDED_CONTRACT = """\
+
+STRICT SOURCE-GROUNDED ANSWER CONTRACT:
+Use these exact section headers:
+1. What the article says
+2. What the social post claims
+3. Supported / not supported
+4. What remains uncertain
+
+Rules:
+- Every factual statement must be grounded in the article text.
+- Label each key fact as one of: reported, quoted, attributed analysis, or not in article.
+- For loaded social-post claims, address every claim explicitly.
+- If no social post is provided, write "No social post provided" in section 2 and do not invent one.
+- If the article says a decision is conditional, proposed, pending, or unfulfilled, do not convert it into an approved or completed action.
+- Attribute official, party, or state-media framing instead of adopting it as neutral fact.
+- Keep the answer concise but complete."""
+
+CLAIM_PREPASS_CONTRACT = """\
+CLAIM-EXTRACTION / VERIFIER PREPASS:
+Return one JSON object with these top-level keys:
+- article_claims: array of key claims from the article that matter for the reader task.
+- post_claims: array of social-post or target-claim subclaims to verify.
+- verifier_summary: short string naming the most important source-fidelity risks.
+
+For each article_claim, include:
+- claim: concise factual statement grounded in the article.
+- status: one of reported, quoted, attributed_analysis, not_in_article.
+- state: one of approved, conditional, proposed, pending, unfulfilled, completed, claimed_position, analysis, unknown.
+- actor: relevant person, institution, or source.
+- numbers: exact amounts, dates, counts, or empty string.
+
+For each post_claim, include:
+- claim: concise social-post or target subclaim.
+- verdict: one of supported, partially_supported, not_supported, not_in_article, uncertain.
+- reason: concise reason grounded in article_claims.
+
+Pay special attention to:
+- Do not convert conditional/proposed/pending/unfulfilled actions into approved/completed actions.
+- Preserve exact numeric direction, such as over/exceeds versus under/less than.
+- Attribute official, party, or state-media framing instead of adopting it as neutral fact."""
+
 
 class TextExtractor(HTMLParser):
     def __init__(self) -> None:
@@ -135,7 +177,7 @@ def fetch_article_text(url: str) -> tuple[str, str]:
         article_body = extract_article_element_text(page)
         method = "html_article_text"
     article_body = normalize_text(article_body.replace("\r", "\n"))
-    if len(article_body) < 1000:
+    if len(article_body) < 400:
         raise RuntimeError(f"extracted article text is too short for {url}: {len(article_body)} chars")
     return article_body, method
 
@@ -156,7 +198,12 @@ def apply_source_markers(article_text: str, source: dict[str, Any]) -> str:
     return article_text.strip()
 
 
-def build_corpus(spec: dict[str, Any], max_article_chars: int | None) -> dict[str, Any]:
+def build_corpus(
+    spec: dict[str, Any],
+    max_article_chars: int | None,
+    answer_contract: str,
+    item_id_suffix: str,
+) -> dict[str, Any]:
     sources = {source["id"]: source for source in spec["sources"]}
     fetched: dict[str, dict[str, Any]] = {}
     for source_id, source in sources.items():
@@ -181,12 +228,39 @@ def build_corpus(spec: dict[str, Any], max_article_chars: int | None) -> dict[st
     items: list[dict[str, Any]] = []
     for row in spec["items"]:
         source = fetched[row["source_id"]]
-        prompt = row["prompt_template"].format(**source)
+        format_vars = {**source, **row}
+        display_format_vars = {
+            **format_vars,
+            "article_text": (
+                "[runtime-fetched article text redacted from report; "
+                "see article_sha256 and article_chars in source metadata]"
+            ),
+        }
+        prompt = row["prompt_template"].format(**format_vars)
+        prompt_display = row["prompt_template"].format(**display_format_vars)
+        if answer_contract in {"source_grounded", "claim_prepass"}:
+            prompt = f"{prompt}\n\n{SOURCE_GROUNDED_CONTRACT}"
+            prompt_display = f"{prompt_display}\n\n{SOURCE_GROUNDED_CONTRACT}"
         item = {
             key: value
             for key, value in row.items()
             if key not in {"prompt_template", "source_id"}
         }
+        if item_id_suffix:
+            item["id"] = f"{item['id']}_{item_id_suffix}"
+            item["input_mode"] = f"{item.get('input_mode', 'fulltext')}_{item_id_suffix}"
+        if answer_contract == "claim_prepass":
+            item["claim_prepass_prompt"] = (
+                f"{CLAIM_PREPASS_CONTRACT}\n\n"
+                f"TARGET CLAIM:\n{row.get('target_claim', '')}\n\n"
+                f"READER TASK AND SOURCE ARTICLE:\n{row['prompt_template'].format(**format_vars)}"
+            )
+            item["claim_prepass_prompt_display"] = (
+                f"{CLAIM_PREPASS_CONTRACT}\n\n"
+                f"TARGET CLAIM:\n{row.get('target_claim', '')}\n\n"
+                "READER TASK AND SOURCE ARTICLE:\n"
+                f"{prompt_display}"
+            )
         item.update(
             {
                 "source": {
@@ -204,13 +278,7 @@ def build_corpus(spec: dict[str, Any], max_article_chars: int | None) -> dict[st
                     )
                 },
                 "prompt": prompt,
-                "prompt_display": row["prompt_template"].replace(
-                    "{article_text}",
-                    (
-                        "[runtime-fetched article text redacted from report; "
-                        "see article_sha256 and article_chars in source metadata]"
-                    ),
-                ),
+                "prompt_display": prompt_display,
             }
         )
         items.append(item)
@@ -228,10 +296,16 @@ def main() -> int:
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-article-chars", type=int, default=None)
+    parser.add_argument(
+        "--answer-contract",
+        choices=["default", "source_grounded", "claim_prepass"],
+        default="default",
+    )
+    parser.add_argument("--item-id-suffix", default="")
     args = parser.parse_args()
 
     spec = json.loads(args.spec.read_text(encoding="utf-8"))
-    corpus = build_corpus(spec, args.max_article_chars)
+    corpus = build_corpus(spec, args.max_article_chars, args.answer_contract, args.item_id_suffix)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(corpus, ensure_ascii=False, indent=2), encoding="utf-8")
     print(args.output, flush=True)

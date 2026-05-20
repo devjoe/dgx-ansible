@@ -1,0 +1,15 @@
+{
+    "corpus_src": "/Users/devjoe/Projects/dgx-ansible/tmp/news-fulltext-stance-prepass-corpus.json",
+    "gemma_assistant_model": "google/gemma-4-26B-A4B-it-assistant",
+    "gemma_image": "vllm/vllm-openai:gemma4-0505-cu130",
+    "gemma_model": "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic",
+    "gemma_num_speculative_tokens": 4,
+    "gemma_patch_host_path": "/home/devjoe/Projects/Ollama/gemma-mtp-speed/gemma4_mtp-d8b3826648da6b407f8c55457a2103be9aeb5d83.py",
+    "gemma_patch_url": "https://raw.githubusercontent.com/vllm-project/vllm/d8b3826648da6b407f8c55457a2103be9aeb5d83/vllm/model_executor/models/gemma4_mtp.py",
+    "gemma_served_name": "gemma4-fp8-mtp",
+    "local_output_dir": "/Users/devjoe/Projects/dgx-ansible/playbooks/../reports/stance-v2-ab-20260520T175232Z",
+    "qwen_model": "qwen3.6-35b",
+    "remote_endpoint": "http://localhost:8000",
+    "run_id": "20260520T175232Z",
+    "stance_ids": ""
+}

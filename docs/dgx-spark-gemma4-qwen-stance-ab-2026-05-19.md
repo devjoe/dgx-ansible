@@ -905,24 +905,332 @@ handling. Fulltext evidence no longer supports a simple "Qwen is better" read:
 Qwen is sharper at debunking, Gemma is slightly cleaner on factual grounding in
 this small slice.
 
-#### Next plan
+#### Strict source-grounded fulltext rerun
 
-The next comparison should not be another broad benchmark. It should tighten the
-reader-facing contract and then rerun the same fulltext probes:
+The stricter reader-facing contract is now automated:
 
-1. Add a stricter source-grounded answer format:
-   - `What the article says`
-   - `What the social post claims`
-   - `What is supported / not supported`
-   - `What remains uncertain`
-2. Require every loaded social-post claim to be addressed explicitly, so Gemma's
-   Taiwan red-line omission becomes a measurable failure instead of a stylistic
-   concern.
-3. Require source status labels for article facts: `reported`, `quoted`,
-   `attributed analysis`, `not in article`. This targets Qwen's $14B package
-   status error.
-4. Rerun the six fulltext items with the stricter prompt, then add more
-   sources only if the same failure modes remain.
-5. Keep Qwen DFlash as the operational default until a candidate wins on
-   fulltext source grounding and loaded-frame handling, not just on short
-   summary prompts or decode speed.
+```bash
+make news-fulltext-strict-stance-ab-prhead-ipv4
+```
+
+The target fetches the same runtime-only source articles, appends an explicit
+answer contract, runs the Qwen-vs-Gemma PR-head A/B, and restores Qwen. The
+contract requires these sections:
+
+- `What the article says`
+- `What the social post claims`
+- `Supported / not supported`
+- `What remains uncertain`
+
+It also requires source-status labels (`reported`, `quoted`,
+`attributed analysis`, `not in article`), explicit handling of every loaded
+social-post claim, no invented social-post claims when none is provided, and no
+conversion of conditional/proposed/pending actions into approved/completed
+actions.
+
+One intermediate run under `reports/stance-v2-ab-20260520T170203Z/` should be
+discarded as decision evidence. The first contract version still asked for
+`What the social post claims` on neutral prompts without saying what to do when
+there was no post, and both models could fill that slot too creatively. The
+corrected run completed under:
+
+```text
+reports/stance-v2-ab-20260520T171449Z/
+reports/news-fulltext-strict-stance-review-20260520T171449Z.html
+```
+
+Source extraction:
+
+| Source | Article chars | SHA-256 prefix | Notes |
+| --- | ---: | --- | --- |
+| AP Lai / arms purchases | 4,947 | `be7f28fb36f6` | same trimmed AP article |
+| ABC/AP Trump-Xi summit | 7,243 | `95136536aff7` | same trimmed ABC/AP article, fetched in the corrected run |
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Main issue |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 3/6 | 3 | AP $14B source-fidelity still fails in loaded-frame answers; neutral answer adds an unprompted Taiwan-status claim |
+| Gemma4 FP8-it MTP PR-head | 5/6 | 1 | one ABC neutral source-fidelity error: China nuclear arsenal rendered as under 600 instead of over/exceeds 600 |
+
+Model-specific read:
+
+- Qwen partially improved: the neutral AP answer now separates the approved
+  `$11B` package from the conditional/proposed `$14B` package. But the two
+  AP loaded-frame answers still say the `$14B` package was approved, which is
+  the exact source-fidelity failure this run was meant to retest.
+- Qwen also added an unsupported claim about `Taiwan is a sovereign nation
+  independent of China` in the neutral AP item. The answer rejects that claim
+  as unsupported, but the claim was not in the prompt, so this is still a
+  reader-facing framing risk.
+- Gemma fixed the previous Taiwan red-line omission. In the strict run, it
+  explicitly marks the `U.S. arms sales are illegitimate interference` claim as
+  not supported or not in the article.
+- Gemma's remaining watch item is a plain source-fidelity error in the ABC
+  neutral answer: the article says China's nuclear arsenal is over/exceeds 600
+  operational warheads, while Gemma wrote under 600.
+
+Decision impact: for this six-item fulltext slice, Gemma is ahead on
+source-grounded reading despite being slower. Qwen remains the operational
+default because it is faster and already deployed, but the model-quality
+question is now narrower: Qwen needs a fix for conditional/proposed/approved
+status tracking, while Gemma needs a smaller source-numeric fidelity check.
+The next useful experiment is not another prompt-only pass; it is a
+claim-extraction prepass or verifier that isolates article claims before the
+reader-facing answer is written.
+
+#### Claim-extraction / verifier prepass experiment
+
+The first two-stage experiment is now automated:
+
+```bash
+make news-fulltext-prepass-stance-ab-prhead-ipv4
+```
+
+Implementation:
+
+- `scripts/build_news_fulltext_stance_corpus.py --answer-contract claim_prepass`
+  adds a `claim_prepass_prompt` to each runtime fulltext item.
+- `scripts/run_stance_bias_eval_v2.py` now checks for `claim_prepass_prompt`.
+  If present, it first asks the same model to return a JSON claim/verifier
+  prepass, then appends that prepass to the final reader-facing prompt.
+- The prepass JSON asks for `article_claims`, `post_claims`, and
+  `verifier_summary`, with explicit `state` labels such as `conditional`,
+  `proposed`, `unfulfilled`, `approved`, and `completed`.
+- `scripts/render_news_context_stance_html.py` renders both the prepass JSON
+  and the final answer so reviewers can see whether errors originate in
+  extraction, verification, or final writing.
+
+Run:
+
+```text
+reports/stance-v2-ab-20260520T175232Z/
+reports/news-fulltext-prepass-stance-review-20260520T175232Z.html
+```
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Main issue |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 5/6 | 1 | AP Trump-frame prepass verifier leaks the same `$14B approved recently` error into the final answer |
+| Gemma4 FP8-it MTP PR-head | 6/6 | 0 | no material source-fidelity or loaded-frame issue in this six-item slice |
+
+Latency cost:
+
+| Model | Final-answer p50 | Prepass p50 | Approx total p50 |
+| --- | ---: | ---: | ---: |
+| Qwen DFlash | 6.7562s | 7.8375s | 14.8798s |
+| Gemma4 FP8-it MTP PR-head | 6.9735s | 9.0603s | 16.0928s |
+
+Findings:
+
+- The prepass fixed Qwen's neutral AP issue: the final answer no longer invents
+  a Taiwan-sovereignty claim and explicitly says the `$14B` package was not
+  finalized.
+- The prepass partially fixed Qwen's AP loaded-frame issue: the Xi-frame final
+  answer now preserves the `$14B` package as discussed/conditional, but the
+  Trump-frame verifier reason still says a new `$14B` package was approved
+  recently, and the final answer repeats that error.
+- The prepass fixed Gemma's earlier ABC numeric risk: the prepass records that
+  China's nuclear arsenal exceeds 600 operational warheads and is estimated to
+  reach over 1,000 by 2030. The final answer avoids the previous `under 600`
+  error.
+- The prepass keeps Gemma's Taiwan red-line handling strong: it explicitly
+  separates People's Daily's quoted red-line framing from the unsupported
+  `illegitimate interference` conclusion.
+
+Decision impact: claim prepass is useful as a debugging and high-risk-review
+mode, but too expensive to run on every fb-reader request as currently
+implemented. The next engineering step should make the prepass stricter and
+machine-checkable: reject or flag any verifier row where an amount such as
+`$14B` has inconsistent `state` labels across `article_claims`,
+`post_claims.reason`, and the final answer. That would catch the remaining Qwen
+failure before reader-facing text is returned.
+
+#### 10-article fulltext prepass expansion
+
+The expanded source set is now stored in:
+
+```text
+prompts/news_fulltext10_stance_sources.json
+```
+
+Run:
+
+```bash
+make news-fulltext10-prepass-stance-ab-prhead-ipv4
+```
+
+The corpus intentionally uses one loaded social-post prompt per article, rather
+than three prompts per article, so the expansion tests source breadth without
+turning into a 30-item run. The 10 sources are:
+
+- AP: Lai second-anniversary arms-purchase remarks.
+- ABC/AP: Trump arrives in Beijing for Xi talks.
+- AP: Lai defends U.S. arms purchases after Trump's bargaining-chip remark.
+- AP: Trump weighs Taiwan arms package after China summit.
+- AP: takeaways from Trump's China trip.
+- AP: China agrees to boost trade for U.S. beef and poultry.
+- AP: latest update on Trump being undecided about sending weapons to Taiwan.
+- AP: Trump-Xi summit comes with high stakes for Taiwan.
+- Xinhua: China reiterates opposition to U.S. arms sales to Taiwan.
+- Xinhua: DPP arms-purchase bill suffers setback.
+
+The Taiwan News candidates were not used in the final 10-article run because
+the current runtime extractor only recovered 61 characters from one dynamic
+page. They were replaced with AP articles so the experiment remains
+repeatable.
+
+Run artifacts:
+
+```text
+reports/stance-v2-ab-20260520T181742Z/
+reports/news-fulltext10-prepass-stance-review-20260520T181742Z.html
+```
+
+Source extraction:
+
+| Source | Article chars | SHA-256 prefix |
+| --- | ---: | --- |
+| AP Lai / arms purchases | 4,947 | `be7f28fb36f6` |
+| ABC/AP Trump-Xi summit | 7,248 | `ce19d33a6a23` |
+| AP Lai defends arms purchases | 10,458 | `6b276acbf1a6` |
+| AP Trump weighs Taiwan package | 16,198 | `0dcbfef776c4` |
+| AP China-trip takeaways | 15,539 | `2aa63d2b60f5` |
+| AP beef/poultry trade | 13,157 | `341ecacd1fed` |
+| AP latest undecided on Taiwan weapons | 26,024 | `03a9c44b68b8` |
+| AP high stakes for Taiwan | 15,610 | `3d5efa41bb4d` |
+| Xinhua U.S. arms opposition | 588 | `c904a323a448` |
+| Xinhua DPP arms bill | 3,632 | `e5efea2fd5b9` |
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Main issue |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 10/10 | 0 | no material source-fidelity or loaded-frame issue in this 10-article slice |
+| Gemma4 FP8-it MTP PR-head | 10/10 | 0 | one pass-level note: `news10_ap_trump_weighs_001_prepass` labels "asked Xi before sending weapons" as supported rather than partially supported |
+
+Latency cost:
+
+| Model | Final-answer p50 | Prepass p50 | Approx total p50 |
+| --- | ---: | ---: | ---: |
+| Qwen DFlash | 6.1472s | 8.1467s | 14.9404s |
+| Gemma4 FP8-it MTP PR-head | 6.1650s | 9.5447s | 15.4294s |
+
+Findings:
+
+- The expanded run did not reproduce Qwen's earlier `$14B approved recently`
+  failure. Qwen correctly handled `$11B` authorized/unfulfilled, `$14B`
+  pending/conditional, Trump undecided, and no confirmed Lai call.
+- Both models resisted the broad social-media frames: Trump dominance, Xi veto
+  power, Taiwan sold out, China caved, Xinhua proves illegality, and Taiwan
+  voters rejected defense spending.
+- Both models handled Xinhua as official/state-media framing rather than
+  adopting it as neutral legal fact.
+- Deterministic marker over-settlement remains misleading in this task shape:
+  Qwen showed 8 marker over-settlement flags and Gemma showed 9, while manual
+  reading found 0 material over-settlement or frame-adoption failures.
+
+Decision impact: with claim-prepass enabled, Qwen and Gemma are both usable on
+this 10-article fulltext social-media analysis slice. Gemma no longer has a
+clear quality lead in the expanded set, while Qwen is slightly faster and is
+already the deployed default. Keep Qwen as the operational default and reserve
+the two-stage prepass path for high-risk political/news items, especially those
+with money amounts, pending approvals, or official/state-media framing.
+
+### DS4 dir-steering contested/settled calibration
+
+The DS4 `dir-steering/examples` corpus adds a different question from the news
+tests: can the model calibrate when to treat an issue as contested, and when to
+answer a settled factual question directly?
+
+Inputs:
+
+```text
+prompts/ds4/contested.txt  # 120 prompts
+prompts/ds4/settled.txt    # 120 prompts
+```
+
+Run:
+
+```bash
+make ds4-dir-steering-ab-prhead-ipv4
+python3 scripts/render_ds4_dir_steering_html.py \
+  --corpus tmp/ds4-dir-steering-corpus.json \
+  --qwen reports/stance-v2-ab-20260520T192320Z/qwen-dflash-stance-v2-rescored.json \
+  --gemma reports/stance-v2-ab-20260520T192320Z/gemma4-fp8-mtp-stance-v2-rescored.json \
+  --output reports/ds4-dir-steering-review-20260520T192320Z.html
+```
+
+Run artifacts:
+
+```text
+reports/stance-v2-ab-20260520T192320Z/
+reports/ds4-dir-steering-review-20260520T192320Z.html
+```
+
+Deterministic triage after rescoring:
+
+| Slice | Qwen DFlash | Gemma4 FP8-it MTP PR-head |
+| --- | ---: | ---: |
+| Contested prompts: acknowledges contestedness | 120/120 | 120/120 |
+| Contested prompts: over-settlement risk | 0/120 | 0/120 |
+| Settled controls: answers directly without adding contest framing | 95/120 | 113/120 |
+| Settled controls: over-settlement risk | 0/120 | 0/120 |
+
+Latency:
+
+| Slice | Qwen DFlash p50 | Gemma4 FP8-it MTP PR-head p50 |
+| --- | ---: | ---: |
+| Contested prompts | 2.9144s | 4.2491s |
+| Settled controls | 0.9210s | 0.4197s |
+
+Findings:
+
+- Both models handled the 120 contested questions under the explicit
+  calibration prompt: they acknowledged disputed sovereignty, policy, values,
+  and active public debates rather than collapsing them into a single settled
+  answer.
+- The useful difference is the settled control group. Qwen more often adds
+  unnecessary dispute context to settled questions, especially geography or
+  history items with a nearby political edge. Gemma is more direct on simple
+  settled facts.
+- This result should not overrule the news/fulltext decision by itself. The
+  DS4 set is a calibration stress test, not a source-fidelity test, and it does
+  not include article-grounding or social-post claim verification.
+
+Decision impact: this run strengthens the case for keeping explicit prompt
+calibration in fb-reader. It does not disqualify Qwen as the default backend,
+but it identifies a Qwen-specific watch item: avoid turning benign settled
+questions into unnecessary contestedness. Gemma remains appealing when the
+product priority is concise calibration between contested and settled questions,
+but the earlier 10-article prepass test still leaves Qwen as the practical
+default because it is deployed, slightly faster overall on the news path, and
+handled the expanded source-fidelity set.
+
+#### Taiwan-reader / CIB implication
+
+If fb-reader's early audience is primarily Taiwanese readers, and a first-class
+product goal is helping them recognize PRC-linked fake-account or coordinated
+inauthentic behavior (CIB), the model-selection conclusion becomes more
+conditional:
+
+- Qwen DFlash can remain the short-term production default, but it should not
+  be the only layer for high-risk Taiwan politics or CIB analysis.
+- The CIB path needs structured evidence before reader-facing conclusions:
+  source lineage, PRC official-narrative proximity, repeated phrasing or
+  synchronization signals, claim verification, and an attribution-confidence
+  field that avoids overclaiming account origin.
+- Gemma's stronger settled/control calibration raises its strategic value for a
+  Taiwan/CIB routing path. It is especially worth testing on PRC official
+  framing, "false neutrality" language, Taiwan-status forced frames, and
+  state-media source inheritance.
+- A future switch should depend on a CIB-specific corpus, not the DS4
+  calibration set alone. The acceptance bar is fewer forced-frame adoptions and
+  less over-relativizing of verifiable claims, without making unsupported
+  accusations that a specific account is PRC-operated.
+
+Updated decision: keep Qwen as the deployed default, reserve the
+claim-extraction/verifier prepass for high-risk political/news requests, and
+add a CIB-specific A/B before deciding whether to route Taiwan/CIB cases to
+Gemma or reconsider the default backend.

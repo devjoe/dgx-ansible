@@ -16,8 +16,10 @@
     stance_v2_ab_corpus: "{{ stance_v2_ab_remote_dir }}/stance_corpus.json"
     stance_v2_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
     stance_v2_ab_ids: ""
+    stance_v2_ab_limit: ""
     stance_v2_ab_timeout: 240
     stance_v2_ab_max_tokens: 900
+    stance_v2_ab_prepass_max_tokens: 1200
 
     gemma4_mtp_container_name: "gemma4-mtp-stance-v2-ab"
     gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
@@ -104,7 +106,8 @@
           'gemma_num_speculative_tokens': gemma4_mtp_num_speculative_tokens,
           'gemma_patch_url': gemma4_mtp_patch_url,
           'gemma_patch_host_path': gemma4_mtp_patch_host_path,
-          'stance_ids': stance_v2_ab_ids
+          'stance_ids': stance_v2_ab_ids,
+          'stance_limit': stance_v2_ab_limit
         } | to_nice_json }}"
 
     - name: Confirm Qwen vLLM is answering before baseline
@@ -128,6 +131,8 @@
           --output {{ (stance_v2_ab_remote_output_dir + '/qwen-dflash-stance-v2.json') | quote }}
           --timeout {{ stance_v2_ab_timeout | string | quote }}
           --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
+          --prepass-max-tokens {{ stance_v2_ab_prepass_max_tokens | string | quote }}
+          {% if stance_v2_ab_limit | string | length > 0 %}--limit {{ stance_v2_ab_limit | string | quote }}{% endif %}
           {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
       changed_when: true
 
@@ -218,6 +223,8 @@
               --output {{ (stance_v2_ab_remote_output_dir + '/gemma4-fp8-mtp-stance-v2.json') | quote }}
               --timeout {{ stance_v2_ab_timeout | string | quote }}
               --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
+              --prepass-max-tokens {{ stance_v2_ab_prepass_max_tokens | string | quote }}
+              {% if stance_v2_ab_limit | string | length > 0 %}--limit {{ stance_v2_ab_limit | string | quote }}{% endif %}
               {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
           changed_when: true
       always:

@@ -1,6 +1,6 @@
 # DGX Spark vLLM Model Selection (fb-reader + OpenCode)
 
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 
 Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 
@@ -315,13 +315,93 @@ Runtime fulltext news-context probe:
   stronger at direct loaded-frame dismantling, but Gemma was cleaner on the AP
   factual distinction. For fb-reader, the next useful comparison is a stricter
   source-grounded prompt that requires claim-by-claim evidence status.
-- Next plan:
-  keep Qwen DFlash as the operational default, then rerun the same six
-  fulltext items with a stricter answer contract: article facts, social-post
-  claims, supported / unsupported status, and remaining uncertainty. This
-  should directly test Qwen's source-fidelity failure on the $14B arms package
-  and Gemma's incomplete Taiwan red-line frame handling before expanding to more
-  news sources.
+
+Strict fulltext follow-up:
+
+- Run:
+  `make news-fulltext-strict-stance-ab-prhead-ipv4`
+- Corrected artifact:
+  `reports/stance-v2-ab-20260520T171449Z/`
+- Manual report:
+  `reports/news-fulltext-strict-stance-review-20260520T171449Z.html`
+- Contract:
+  exact sections for article facts, social-post claims, supported/not-supported
+  status, and remaining uncertainty; source-status labels for key facts; no
+  invented social-post claims when no post is provided; no conversion of
+  conditional/proposed/pending actions into approved/completed actions.
+- Manual result:
+  Qwen was 3/6 manual pass with three watch items. It fixed the AP neutral
+  `$14B` status summary, but still treated the conditional `$14B` package as
+  approved in both AP loaded-frame answers, and the AP neutral answer added an
+  unprompted Taiwan-status claim. Gemma was 5/6 manual pass with one watch
+  item: an ABC neutral source-fidelity error that rendered China's nuclear
+  arsenal as under 600 operational warheads where the article says over/exceeds
+  600.
+- Selection implication:
+  on strict fulltext source-grounding, Gemma is currently ahead in this small
+  slice. Qwen remains the deployed default because it is faster and operationally
+  simpler, but the next quality work should add a claim-extraction or verifier
+  stage for conditional/proposed/approved status rather than relying on a
+  broader prompt alone.
+
+Claim-extraction / verifier prepass follow-up:
+
+- Run:
+  `make news-fulltext-prepass-stance-ab-prhead-ipv4`
+- Artifact:
+  `reports/stance-v2-ab-20260520T175232Z/`
+- Manual report:
+  `reports/news-fulltext-prepass-stance-review-20260520T175232Z.html`
+- Method:
+  the stance runner now optionally performs a first model call for
+  `claim_prepass_prompt`, asking for JSON `article_claims`, `post_claims`, and
+  `verifier_summary`, then appends that prepass to the final reader-facing
+  prompt.
+- Manual result:
+  Qwen improved to 5/6 manual pass, but one AP Trump-frame watch remains because
+  its prepass verifier reason still says the new `$14B` package was approved
+  recently and the final answer repeats that error. Gemma reached 6/6 manual
+  pass in this slice, including the ABC nuclear-count item and Taiwan red-line
+  item.
+- Latency:
+  the two-stage path is expensive. Approximate total p50 was `14.8798s` for
+  Qwen and `16.0928s` for Gemma, because each item now makes a prepass call and
+  a final-answer call.
+- Selection implication:
+  Gemma remains the cleaner source-grounded model on this small fulltext social
+  analysis slice. Qwen remains the operational default, but a production-safe
+  Qwen path would need a stricter machine-checkable verifier that detects
+  inconsistent amount/state pairs such as `$14B conditional` becoming
+  `$14B approved recently`.
+
+10-article prepass expansion:
+
+- Run:
+  `make news-fulltext10-prepass-stance-ab-prhead-ipv4`
+- Artifact:
+  `reports/stance-v2-ab-20260520T181742Z/`
+- Manual report:
+  `reports/news-fulltext10-prepass-stance-review-20260520T181742Z.html`
+- Corpus:
+  `prompts/news_fulltext10_stance_sources.json`, with 8 AP/ABC/AP articles and
+  2 Xinhua state-media/official-framing articles. Taiwan News candidates were
+  dropped because the current runtime extractor only recovered 61 characters
+  from one dynamic page.
+- Manual result:
+  Qwen reached 10/10 manual pass. Gemma also reached 10/10 manual pass, with
+  one pass-level note on `news10_ap_trump_weighs_001_prepass`: it labels
+  "asked Xi before sending weapons" as supported rather than partially
+  supported, but still rejects formal Beijing veto power and preserves pending
+  package status.
+- Latency:
+  approximate total p50 was `14.9404s` for Qwen and `15.4294s` for Gemma.
+- Selection implication:
+  with claim prepass enabled, the expanded source set no longer shows a clear
+  Gemma quality lead. Qwen is slightly faster, already deployed, and did not
+  repeat the earlier `$14B` state error in this run. Keep Qwen DFlash as the
+  operational default and reserve two-stage prepass for high-risk news/politics
+  items involving money amounts, pending approvals, or official/state-media
+  framing.
 
 ## Gemma4 MTP Follow-up (2026-05-07)
 

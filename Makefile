@@ -14,6 +14,14 @@ FB_READER_AB_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
 NEWS_CONTEXT_STANCE_CORPUS ?= prompts/news_context_stance_corpus.json
 NEWS_FULLTEXT_STANCE_SPEC ?= prompts/news_fulltext_stance_sources.json
 NEWS_FULLTEXT_STANCE_CORPUS ?= tmp/news-fulltext-stance-corpus.json
+NEWS_FULLTEXT_STRICT_STANCE_CORPUS ?= tmp/news-fulltext-stance-strict-corpus.json
+NEWS_FULLTEXT_PREPASS_STANCE_CORPUS ?= tmp/news-fulltext-stance-prepass-corpus.json
+NEWS_FULLTEXT10_STANCE_SPEC ?= prompts/news_fulltext10_stance_sources.json
+NEWS_FULLTEXT10_PREPASS_STANCE_CORPUS ?= tmp/news-fulltext10-stance-prepass-corpus.json
+DS4_DIR_STEERING_CONTESTED ?= prompts/ds4/contested.txt
+DS4_DIR_STEERING_SETTLED ?= prompts/ds4/settled.txt
+DS4_DIR_STEERING_CORPUS ?= tmp/ds4-dir-steering-corpus.json
+DS4_DIR_STEERING_LIMIT ?=
 GEMMA_MTP_PRHEAD_SHA ?= d8b3826648da6b407f8c55457a2103be9aeb5d83
 GEMMA_MTP_PRHEAD_URL ?= https://raw.githubusercontent.com/vllm-project/vllm/$(GEMMA_MTP_PRHEAD_SHA)/vllm/model_executor/models/gemma4_mtp.py
 GEMMA_MTP_PRHEAD_REMOTE ?= /home/devjoe/Projects/Ollama/gemma-mtp-speed/gemma4_mtp-$(GEMMA_MTP_PRHEAD_SHA).py
@@ -21,7 +29,7 @@ GEMMA_MTP_PRHEAD_STANCE_PROFILES ?= prodctx-g1-u055,prodctx-g4-u055,fastctx-g4-u
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -73,6 +81,47 @@ news-fulltext-stance-ab-prhead: news-fulltext-stance-corpus  ## Run fulltext cur
 
 news-fulltext-stance-ab-prhead-ipv4:  ## Run fulltext current-news stance-v2 A/B through direct IPv4
 	$(MAKE) news-fulltext-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+news-fulltext-strict-stance-corpus:  ## Fetch fulltext into tmp corpus with strict source-grounded contract
+	python3 scripts/build_news_fulltext_stance_corpus.py --spec "$(NEWS_FULLTEXT_STANCE_SPEC)" --output "$(NEWS_FULLTEXT_STRICT_STANCE_CORPUS)" --answer-contract source_grounded --item-id-suffix strict
+
+news-fulltext-strict-stance-ab-prhead: news-fulltext-strict-stance-corpus  ## Run strict fulltext current-news stance-v2 A/B
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_FULLTEXT_STRICT_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) stance_v2_ab_timeout=420 stance_v2_ab_max_tokens=1500'
+
+news-fulltext-strict-stance-ab-prhead-ipv4:  ## Run strict fulltext current-news stance-v2 A/B through direct IPv4
+	$(MAKE) news-fulltext-strict-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+news-fulltext-prepass-stance-corpus:  ## Fetch fulltext into tmp corpus with claim prepass prompts
+	python3 scripts/build_news_fulltext_stance_corpus.py --spec "$(NEWS_FULLTEXT_STANCE_SPEC)" --output "$(NEWS_FULLTEXT_PREPASS_STANCE_CORPUS)" --answer-contract claim_prepass --item-id-suffix prepass
+
+news-fulltext-prepass-stance-ab-prhead: news-fulltext-prepass-stance-corpus  ## Run fulltext stance A/B with claim-extraction/verifier prepass
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_FULLTEXT_PREPASS_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) stance_v2_ab_timeout=480 stance_v2_ab_max_tokens=1500 stance_v2_ab_prepass_max_tokens=1800'
+
+news-fulltext-prepass-stance-ab-prhead-ipv4:  ## Run fulltext claim-prepass stance A/B through direct IPv4
+	$(MAKE) news-fulltext-prepass-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+news-fulltext10-prepass-stance-corpus:  ## Fetch 10-article fulltext corpus with claim prepass prompts
+	python3 scripts/build_news_fulltext_stance_corpus.py --spec "$(NEWS_FULLTEXT10_STANCE_SPEC)" --output "$(NEWS_FULLTEXT10_PREPASS_STANCE_CORPUS)" --answer-contract claim_prepass --item-id-suffix prepass
+
+news-fulltext10-prepass-stance-ab-prhead: news-fulltext10-prepass-stance-corpus  ## Run 10-article fulltext stance A/B with claim prepass
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_FULLTEXT10_PREPASS_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) stance_v2_ab_timeout=480 stance_v2_ab_max_tokens=1500 stance_v2_ab_prepass_max_tokens=1800'
+
+news-fulltext10-prepass-stance-ab-prhead-ipv4:  ## Run 10-article claim-prepass stance A/B through direct IPv4
+	$(MAKE) news-fulltext10-prepass-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+ds4-dir-steering-fetch:  ## Refresh DS4 dir-steering example fixtures from upstream
+	mkdir -p prompts/ds4
+	curl -L -o "$(DS4_DIR_STEERING_CONTESTED)" https://raw.githubusercontent.com/audreyt/ds4/main/dir-steering/examples/contested.txt
+	curl -L -o "$(DS4_DIR_STEERING_SETTLED)" https://raw.githubusercontent.com/audreyt/ds4/main/dir-steering/examples/settled.txt
+
+ds4-dir-steering-corpus:  ## Build DS4 contested/settled dir-steering corpus
+	python3 scripts/build_ds4_dir_steering_corpus.py --contested "$(DS4_DIR_STEERING_CONTESTED)" --settled "$(DS4_DIR_STEERING_SETTLED)" --output "$(DS4_DIR_STEERING_CORPUS)"
+
+ds4-dir-steering-ab-prhead: ds4-dir-steering-corpus  ## Run DS4 contested/settled dir-steering A/B
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(DS4_DIR_STEERING_CORPUS) stance_v2_ab_limit=$(DS4_DIR_STEERING_LIMIT) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) stance_v2_ab_timeout=240 stance_v2_ab_max_tokens=700'
+
+ds4-dir-steering-ab-prhead-ipv4:  ## Run DS4 dir-steering A/B through direct IPv4
+	$(MAKE) ds4-dir-steering-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 gemma-mtp-endpoint-parity-prhead:  ## Compare Gemma4 /v1/completions vs /v1/chat/completions with PR-head
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=endpoint-parity-g4-u085 gemma_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
