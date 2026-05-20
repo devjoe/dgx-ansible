@@ -1,0 +1,273 @@
+---
+# Run a stance-v2 corpus A/B against the current Qwen service and the Gemma4
+# FP8-it MTP PR-head candidate, without running the fb-reader Tier B replay.
+
+- name: Run stance-v2 Qwen vs Gemma4 PR-head A/B on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    stance_v2_ab_run_id: "{{ stance_v2_ab_run_id_fixed }}"
+    stance_v2_ab_remote_dir: "{{ remote_workdir }}/stance-v2-ab"
+    stance_v2_ab_remote_output_dir: "{{ remote_workdir }}/benchmarks/stance-v2-ab-{{ stance_v2_ab_run_id }}"
+    stance_v2_ab_local_output_dir: "{{ playbook_dir }}/../reports/stance-v2-ab-{{ stance_v2_ab_run_id }}"
+    stance_v2_ab_runner: "{{ stance_v2_ab_remote_dir }}/run_stance_bias_eval_v2.py"
+    stance_v2_ab_corpus_src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+    stance_v2_ab_corpus: "{{ stance_v2_ab_remote_dir }}/stance_corpus.json"
+    stance_v2_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
+    stance_v2_ab_ids: ""
+    stance_v2_ab_timeout: 240
+    stance_v2_ab_max_tokens: 900
+
+    gemma4_mtp_container_name: "gemma4-mtp-stance-v2-ab"
+    gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
+    gemma4_mtp_model: "RedHatAI/gemma-4-26B-A4B-it-FP8-Dynamic"
+    gemma4_mtp_assistant_model: "google/gemma-4-26B-A4B-it-assistant"
+    gemma4_mtp_served_name: "gemma4-fp8-mtp"
+    gemma4_mtp_num_speculative_tokens: 4
+    gemma4_mtp_speculative_config: '{"method":"mtp","model":"google/gemma-4-26B-A4B-it-assistant","num_speculative_tokens":4}'
+    gemma4_mtp_hf_hub_offline: true
+    gemma4_mtp_gpu_memory_utilization: "0.55"
+    gemma4_mtp_kv_cache_dtype: "fp8"
+    gemma4_mtp_max_model_len: 262144
+    gemma4_mtp_max_num_seqs: 4
+    gemma4_mtp_max_num_batched_tokens: 16384
+    gemma4_mtp_patch_url: ""
+    gemma4_mtp_patch_host_path: ""
+    gemma4_mtp_readiness_retries: 72
+    gemma4_mtp_readiness_delay: 5
+  tasks:
+    - name: Set stable stance-v2 A/B run id
+      ansible.builtin.set_fact:
+        stance_v2_ab_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure remote stance-v2 A/B dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ stance_v2_ab_remote_dir }}"
+        - "{{ stance_v2_ab_remote_output_dir }}"
+
+    - name: Ensure Gemma patch directory exists
+      ansible.builtin.file:
+        path: "{{ gemma4_mtp_patch_host_path | dirname }}"
+        state: directory
+        mode: "0755"
+      when: gemma4_mtp_patch_host_path | length > 0
+
+    - name: Ensure local stance-v2 A/B output dir exists
+      ansible.builtin.file:
+        path: "{{ stance_v2_ab_local_output_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ stance_v2_ab_runner }}"
+        mode: "0755"
+
+    - name: Copy stance-v2 corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ stance_v2_ab_corpus_src }}"
+        dest: "{{ stance_v2_ab_corpus }}"
+        mode: "0644"
+
+    - name: Fetch Gemma MTP PR-head patch file to DGX
+      ansible.builtin.get_url:
+        url: "{{ gemma4_mtp_patch_url }}"
+        dest: "{{ gemma4_mtp_patch_host_path }}"
+        mode: "0644"
+      when:
+        - gemma4_mtp_patch_url | length > 0
+        - gemma4_mtp_patch_host_path | length > 0
+
+    - name: Write stance-v2 A/B manifest
+      ansible.builtin.copy:
+        dest: "{{ stance_v2_ab_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': stance_v2_ab_run_id,
+          'corpus_src': stance_v2_ab_corpus_src,
+          'remote_endpoint': stance_v2_ab_base_url_remote,
+          'local_output_dir': stance_v2_ab_local_output_dir,
+          'qwen_model': vllm_served_name,
+          'gemma_model': gemma4_mtp_model,
+          'gemma_assistant_model': gemma4_mtp_assistant_model,
+          'gemma_served_name': gemma4_mtp_served_name,
+          'gemma_image': gemma4_mtp_image,
+          'gemma_num_speculative_tokens': gemma4_mtp_num_speculative_tokens,
+          'gemma_patch_url': gemma4_mtp_patch_url,
+          'gemma_patch_host_path': gemma4_mtp_patch_host_path,
+          'stance_ids': stance_v2_ab_ids
+        } | to_nice_json }}"
+
+    - name: Confirm Qwen vLLM is answering before baseline
+      ansible.builtin.uri:
+        url: "{{ stance_v2_ab_base_url_remote }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run stance-v2 against Qwen baseline
+      ansible.builtin.command:
+        cmd: >-
+          /usr/bin/python3 {{ stance_v2_ab_runner | quote }}
+          --base-url {{ stance_v2_ab_base_url_remote | quote }}
+          --model {{ vllm_served_name | quote }}
+          --label qwen-dflash
+          --corpus {{ stance_v2_ab_corpus | quote }}
+          --output {{ (stance_v2_ab_remote_output_dir + '/qwen-dflash-stance-v2.json') | quote }}
+          --timeout {{ stance_v2_ab_timeout | string | quote }}
+          --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
+          {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
+      changed_when: true
+
+    - name: Run Gemma4 candidate and restore Qwen afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before Gemma4 launch
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Remove previous Gemma4 stance-v2 A/B container if present
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Launch Gemma4 FP8-it MTP PR-head container
+          ansible.builtin.shell: |
+            set -euo pipefail
+            docker run -d \
+              --name {{ gemma4_mtp_container_name }} \
+              --gpus all \
+              --ipc=host \
+              --network host \
+              -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+              -e HF_HUB_OFFLINE={{ gemma4_mtp_hf_hub_offline | ternary('1','0') }} \
+              -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
+              -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
+              {% if gemma4_mtp_patch_host_path | length > 0 -%}
+              -v {{ gemma4_mtp_patch_host_path }}:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/gemma4_mtp.py:ro \
+              {% endif -%}
+              {{ gemma4_mtp_image }} \
+              {{ gemma4_mtp_model }} \
+              --host 0.0.0.0 \
+              --port {{ vllm_port }} \
+              --served-model-name {{ gemma4_mtp_served_name }} \
+              --gpu-memory-utilization {{ gemma4_mtp_gpu_memory_utilization }} \
+              --kv-cache-dtype {{ gemma4_mtp_kv_cache_dtype }} \
+              --max-model-len {{ gemma4_mtp_max_model_len }} \
+              --max-num-seqs {{ gemma4_mtp_max_num_seqs }} \
+              --max-num-batched-tokens {{ gemma4_mtp_max_num_batched_tokens }} \
+              --tensor-parallel-size 1 \
+              --trust-remote-code \
+              --enable-chunked-prefill \
+              --enable-prefix-caching \
+              --speculative-config '{{ gemma4_mtp_speculative_config }}'
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for Gemma4 MTP /v1/models
+          ansible.builtin.uri:
+            url: "{{ stance_v2_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: gemma_models
+          retries: "{{ gemma4_mtp_readiness_retries }}"
+          delay: "{{ gemma4_mtp_readiness_delay }}"
+          until: gemma_models.status == 200
+
+        - name: Save Gemma4 vLLM metrics
+          ansible.builtin.uri:
+            url: "{{ stance_v2_ab_base_url_remote }}/metrics"
+            return_content: true
+            timeout: 10
+          register: gemma_metrics
+          failed_when: false
+          changed_when: false
+
+        - name: Persist Gemma4 vLLM metrics
+          ansible.builtin.copy:
+            dest: "{{ stance_v2_ab_remote_output_dir }}/gemma4-fp8-mtp-metrics.prom"
+            content: "{{ gemma_metrics.content }}"
+            mode: "0644"
+          when: gemma_metrics.status | default(0) == 200
+
+        - name: Run stance-v2 against Gemma4 candidate
+          ansible.builtin.command:
+            cmd: >-
+              /usr/bin/python3 {{ stance_v2_ab_runner | quote }}
+              --base-url {{ stance_v2_ab_base_url_remote | quote }}
+              --model {{ gemma4_mtp_served_name | quote }}
+              --label gemma4-fp8-mtp
+              --corpus {{ stance_v2_ab_corpus | quote }}
+              --output {{ (stance_v2_ab_remote_output_dir + '/gemma4-fp8-mtp-stance-v2.json') | quote }}
+              --timeout {{ stance_v2_ab_timeout | string | quote }}
+              --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
+              {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
+          changed_when: true
+      always:
+        - name: Save Gemma4 stance-v2 A/B container logs
+          ansible.builtin.shell: |
+            docker logs --tail 1000 {{ gemma4_mtp_container_name }} > {{ stance_v2_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log 2>&1 || true
+          become: true
+          failed_when: false
+          changed_when: false
+
+        - name: Stop Gemma4 stance-v2 A/B container
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ gemma4_mtp_container_name }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ stance_v2_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Fetch remote stance-v2 A/B artifacts
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ stance_v2_ab_local_output_dir }}/"
+        flat: true
+      loop:
+        - "{{ stance_v2_ab_remote_output_dir }}/manifest.json"
+        - "{{ stance_v2_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+        - "{{ stance_v2_ab_remote_output_dir }}/gemma4-fp8-mtp-stance-v2.json"
+        - "{{ stance_v2_ab_remote_output_dir }}/gemma4-fp8-mtp-container.log"
+        - "{{ stance_v2_ab_remote_output_dir }}/gemma4-fp8-mtp-metrics.prom"
+      failed_when: false
+
+    - name: Show stance-v2 A/B output directory
+      ansible.builtin.debug:
+        msg: "Stance-v2 A/B outputs: {{ stance_v2_ab_local_output_dir }}"

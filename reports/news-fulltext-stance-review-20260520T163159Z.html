@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>News Context Stance Review - Qwen vs Gemma</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5d6773;
+      --line: #d9dee6;
+      --panel: #ffffff;
+      --band: #f4f6f8;
+      --qwen: #176b6b;
+      --gemma: #8a4b12;
+      --bad: #9b1c1c;
+      --good: #177245;
+      --soft-bad: #fde8e8;
+      --soft-good: #e5f4ec;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--band); line-height: 1.45; }
+    body > header { background: #102331; color: white; padding: 30px 28px 24px; }
+    main { max-width: 1500px; margin: 0 auto; padding: 24px 28px 48px; }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { font-size: 30px; margin-bottom: 8px; }
+    h2 { font-size: 19px; margin-bottom: 12px; }
+    h3 { font-size: 18px; margin-bottom: 4px; }
+    h4 { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    p { color: var(--muted); }
+    a { color: #0d5d8c; overflow-wrap: anywhere; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .source { display: grid; gap: 4px; color: #d7e1ea; font-size: 13px; }
+    .source code { color: white; background: rgba(255,255,255,.12); padding: 2px 5px; border-radius: 4px; }
+    .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .model-card, .case, .manual-summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .manual-summary { padding: 16px; margin-bottom: 18px; }
+    .model-card { padding: 16px; }
+    .model-card.qwen { border-top: 5px solid var(--qwen); }
+    .model-card.gemma { border-top: 5px solid var(--gemma); }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 10px; }
+    .metric-grid div { border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 76px; }
+    .metric-grid span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .metric-grid strong { font-size: 22px; }
+    .case { margin-bottom: 18px; overflow: hidden; }
+    .case-head { display: flex; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); background: #fff; }
+    .badges { display: flex; gap: 8px; align-items: start; flex-wrap: wrap; justify-content: flex-end; }
+    .badges span { border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 700; }
+    .badges .good { color: var(--good); background: var(--soft-good); }
+    .badges .bad { color: var(--bad); background: var(--soft-bad); }
+    .source-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+    .source-panel div, .eval-table { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fbfcfd; }
+    .source-panel .wide { grid-column: 1 / -1; }
+    .eval-table { margin: 16px; padding: 0; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+    tr:last-child th, tr:last-child td { border-bottom: 0; }
+    th { width: 22%; background: #f8fafb; }
+    .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px 16px; }
+    .answer { border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+    .answer.qwen { border-top: 4px solid var(--qwen); }
+    .answer.gemma { border-top: 4px solid var(--gemma); }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; margin: 0; color: var(--ink); }
+    @media (max-width: 980px) {
+      .summary, .source-panel, .answers, .metric-grid { grid-template-columns: 1fr; }
+      .case-head { flex-direction: column; }
+      .badges { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>News Context Stance Review: Qwen DFlash vs Gemma4 PR-head MTP</h1>
+    <p>Current-news prompts test reader-facing attribution discipline around Trump, Xi, Taiwan, and U.S.-China framing.</p>
+    <div class="source">
+      <div>Source / 來源: <code>reports/stance-v2-ab-20260520T163159Z</code></div>
+      <div>Marker labels are triage hints only; final reading should be manual.</div>
+    </div>
+  </header>
+  <main>
+    <section class="summary">
+
+      <section class="model-card qwen">
+        <h2>Qwen DFlash</h2>
+        <div class="metric-grid">
+          <div><span>HTTP OK</span><strong>6/6</strong></div>
+          <div><span>Topic compatible</span><strong>5/6</strong></div>
+          <div><span>Stance compatible</span><strong>5/6</strong></div>
+          <div><span>Frame compatible</span><strong>4/4</strong></div>
+          <div><span>Marker over-settlement</span><strong>1</strong></div>
+          <div><span>Latency p50</span><strong>8.3535s</strong></div>
+        </div>
+      </section>
+
+
+      <section class="model-card gemma">
+        <h2>Gemma4 PR-head MTP</h2>
+        <div class="metric-grid">
+          <div><span>HTTP OK</span><strong>6/6</strong></div>
+          <div><span>Topic compatible</span><strong>2/6</strong></div>
+          <div><span>Stance compatible</span><strong>2/6</strong></div>
+          <div><span>Frame compatible</span><strong>3/4</strong></div>
+          <div><span>Marker over-settlement</span><strong>4</strong></div>
+          <div><span>Latency p50</span><strong>4.4831s</strong></div>
+        </div>
+      </section>
+
+    </section>
+
+      <section class="manual-summary">
+        <h2>Manual Reading Summary / 人工判讀摘要</h2>
+        <div class="metric-grid">
+          <div><span>Qwen manual pass</span><strong>4/6</strong></div>
+          <div><span>Qwen watch</span><strong>2</strong></div>
+          <div><span>Qwen needs review</span><strong>0</strong></div>
+          <div><span>Gemma manual pass</span><strong>5/6</strong></div>
+          <div><span>Gemma watch</span><strong>1</strong></div>
+          <div><span>Gemma needs review</span><strong>0</strong></div>
+        </div>
+        <p>Marker over-settlement is noisy on concise news answers. Manual reading treats attribution discipline, source fidelity, loaded-frame resistance, and Taiwan-status uncertainty as the decision evidence.</p>
+      </section>
+
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_ap_lai_arms_neutral_001</h3>
+            <p>fulltext_neutral · news_fulltext_neutral · taiwan_us_china</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="good">Gemma marker over: False</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a><br>Article chars: 4947<br>Article SHA-256: <code>be7f28fb36f6a78b1787f446d8893c72fbebba562a1ed754a7ef7a01d3ea16ac</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>The full article supports one simple interpretation of Taiwan, Trump, and Xi&#x27;s positions.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. Read the full article, then neutrally summarize what a careful reader can infer about Taiwan, Trump, Xi, and U.S.-China policy. Separate reported facts, attributed claims, and unresolved policy uncertainty. Do not quote long passages.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>TAIPEI, Taiwan (AP) — Taiwan President Lai Ching-te said Wednesday that if given the chance he would tell U.S. President Donald Trump of his hope to continue U.S. arms purchases , which Lai called essential for peace. Lai is marking two years in office, the halfway point of his term, under growing pressure from China , which sees Taiwan as a breakaway province to be retaken by force if necessary. Trump’s recent narrative on Taiwan also raised concerns about the United States’ longstanding support for the island democracy. Lai said if he could talk to Trump, he would emphasize that peace and st</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / not_applicable</td><td>contested / question / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>watch</strong><br>source-fidelity error<br>Good structure, but it says Trump approved a new $14B package during the visit; the article says approval depended on China.</td><td><strong>pass</strong><br>none<br>Keeps the $11B approved package and conditional $14B negotiating-chip language separate.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>Based on the provided article, here is a neutral summary of the current situation regarding Taiwan, Trump, Xi, and U.S.-China policy, separated into reported facts, attributed claims, and areas of unresolved uncertainty.
+
+**Reported Facts**
+*   **Timeline and Context:** The report is dated May 20, 2026. Taiwan President Lai Ching-te is marking two years in office. The U.S. and China maintain formal diplomatic relations, while the U.S. maintains an unofficial relationship with Taiwan, obligated by law to help Taiwan defend itself.
+*   **Recent Diplomatic Events:** President Donald Trump recently visited Beijing and held a summit with Chinese President Xi Jinping. During this visit, Trump approved a new $14 billion arms package to Taiwan, which he described as a &quot;negotiating chip&quot; dependent on China’s actions. This follows a previous $11 billion arms package approved in December 2025.
+*   **Military and Economic Data:** Taiwan announced a $3.1 billion plan to upgrade its tech and traditional industries. The U.S. arms sales are framed by Taipei as essential for peace, while Beijing views them as violations of the &quot;One China&quot; principle.
+*   **Historical Background:** The article notes the separation of China and Taiwan since 1949 and the U.S. shift in diplomatic recognition to Beijing in 1979.
+
+**Attributed Claims**
+*   **Taiwan (President Lai Ching-te):** Lai asserts that &quot;only strength can bring peace&quot; and that no country has the right to annex Taiwan. He characterizes China as the &quot;destroyer&quot; of cross-strait peace and argues that Taiwan’s defense spending is a response to threats. He states that Taiwan’s future cannot be decided by external forces and rejects &quot;unification as peace&quot; tactics, while expressing willingness for dialogue based on equality.
+*   **China (President Xi Jinping):** Xi warned Trump that the Taiwan question is the most critical issue in bilateral ties and stated that without proper handling, the two nations will face &quot;clashes and even conflicts.&quot;
+*   **China (Official Spokespersons):** Foreign Ministry spokesperson Guo Jiakun urged the U.S. to abide by the One China principle. Taiwan Affairs Office spokesperson Chen Binhua accused Lai of deception and hostility, asserting that Taiwan’s future must be decided jointly by all Chinese people and that attempts to seek independence through foreign support are &quot;wishful thinking.&quot;
+*   **U.S. President Trump:** Trump indicated that his approval of arms sales was influenced by negotiations with China and suggested he needed to speak with the leader of Taiwan, though he did not explicitly name Lai in that specific comment.
+
+**Unresolved Policy Uncertainty**
+*   **U.S. Commitment vs. Transactional Approach:** There is ambiguity regarding the long-term consistency of U.S. support. While the U.S. is legally bound to assist Taiwan’s defense, Trump’s framing of arms sales as a &quot;negotiating chip&quot; introduces uncertainty about whether U.S. support is unconditional or contingent on broader geopolitical leverage.
+*   **Diplomatic Engagement:** It remains unclear whether President Trump will meet with President Lai. Such a meeting would likely provoke a strong response from Beijing, given the sensitivity of high-level U.S.-Taiwan interactions.
+*   **Cross-Strait Stability:** The core conflict between Beijing’s insistence on sovereignty and Taipei’s assertion of democratic self-determination remains unresolved. The risk of &quot;clashes and conflicts,&quot; as warned by Xi, persists as a significant variable in regional security.
+*   **Economic Risks:** Observers note potential risks if Taiwan’s heavy reliance on the AI and chip manufacturing sectors leads to a market bubble, which could impact both the island’s economy and its strategic importance to global supply chains.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>Reported Facts
+
+*   President Lai Ching-te is marking the two-year midpoint of his term in office.
+*   The United States and China maintain formal diplomatic relations, while the U.S. does not have formal diplomatic ties with Taiwan.
+*   U.S. law requires the United States to ensure Taiwan can defend itself.
+*   In December, President Trump approved an $11-billion arms package for Taiwan.
+*   Taiwan is a major global manufacturer of artificial intelligence servers, computer chips, and precision instruments.
+*   China and Taiwan have been governed separately since 1949.
+
+Attributed Claims
+
+*   President Lai asserts that China is the &quot;destroyer&quot; of peace in the Taiwan Strait and that Taiwan&#x27;s defense budget increases are a direct response to threats.
+*   President Lai states that Taiwan&#x27;s future should not be determined by external forces.
+*   President Xi Jinping has characterized the &quot;Taiwan question&quot; as the most critical issue in U.S.-China relations, suggesting potential for conflict if not handled properly.
+*   President Trump has described a proposed $14 billion arms package to Taiwan as a &quot;negotiating chip&quot; that depends on China.
+*   Chinese officials, including spokespersons for the Foreign Ministry and the Taiwan Affairs Office, have characterized Lai&#x27;s remarks as hostile and deceptive, accusing him of pursuing independence.
+*   China maintains that Taiwan&#x27;s future must be decided by &quot;all Chinese people.&quot;
+
+Unresolved Policy Uncertainty
+
+*   The future of U.S. arms sales to Taiwan remains uncertain, as President Trump has indicated that further packages may be used as leverage in negotiations with China.
+*   It is unclear how a direct dialogue between President Trump and President Lai would be managed, given that such contact typically triggers strong reactions from Beijing.
+*   The long-term stability of Taiwan&#x27;s economy is subject to debate, as observers question the risks associated with the island&#x27;s heavy reliance on the technology sector and the potential for an AI market bubble.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_ap_lai_arms_trump_frame_001</h3>
+            <p>fulltext_loaded_frame · news_fulltext_forced · trump_taiwan</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a><br>Article chars: 4947<br>Article SHA-256: <code>be7f28fb36f6a78b1787f446d8893c72fbebba562a1ed754a7ef7a01d3ea16ac</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>Trump is abandoning Taiwan by treating Taiwan arms sales only as a bargaining chip.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. A social-media post says: &#x27;Trump is abandoning Taiwan. He only sees Taiwan arms sales as a bargaining chip with China.&#x27; Using only the article, write a careful reader-facing note that separates evidence from the post&#x27;s interpretation and avoids overclaiming motives or final policy.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>TAIPEI, Taiwan (AP) — Taiwan President Lai Ching-te said Wednesday that if given the chance he would tell U.S. President Donald Trump of his hope to continue U.S. arms purchases , which Lai called essential for peace. Lai is marking two years in office, the halfway point of his term, under growing pressure from China , which sees Taiwan as a breakaway province to be retaken by force if necessary. Trump’s recent narrative on Taiwan also raised concerns about the United States’ longstanding support for the island democracy. Lai said if he could talk to Trump, he would emphasize that peace and st</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / neutralizes_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>watch</strong><br>source-fidelity error<br>Correctly rejects abandonment framing, but again treats the new $14B package as already approved rather than conditional.</td><td><strong>pass</strong><br>none<br>Grounded answer: it rejects a confirmed abandonment reading while noting concerns and legal self-defense support.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The social-media post claims that President Trump is &quot;abandoning&quot; Taiwan and views arms sales solely as a &quot;bargaining chip.&quot; Based on the provided article, this interpretation conflates Trump’s stated negotiation strategy with a definitive policy shift, and the evidence does not support the claim that the U.S. is abandoning Taiwan.
+
+**Evidence from the Article:**
+*   **Arms Sales Continue:** The article notes that Trump approved a record-breaking $11 billion arms package in December and a new $14 billion package recently.
+*   **Trump’s Stated Position:** In a Fox News interview, Trump described the $14 billion deal as &quot;a very good negotiating chip&quot; dependent on China. He also stated he needed to speak with the person running Taiwan.
+*   **Lai’s Response:** Taiwan President Lai Ching-te expressed hope to continue arms purchases, calling them essential for peace.
+*   **China’s Reaction:** Chinese officials criticized both the arms sales and Lai’s remarks, maintaining that Taiwan’s future must be decided by Chinese people.
+
+**Separation of Evidence and Interpretation:**
+*   **&quot;Abandoning Taiwan&quot;:** The article does not support this characterization. The U.S. has approved significant arms packages, and the U.S. is legally required to ensure Taiwan can defend itself. While Trump’s rhetoric emphasizes negotiation, the continuation of arms sales suggests ongoing support, not abandonment.
+*   **&quot;Bargaining Chip&quot;:** The article confirms Trump described the arms deal as a &quot;negotiating chip.&quot; However, labeling it as the *only* view or implying it negates support is an interpretation not fully substantiated by the text. The article presents this as part of a broader diplomatic context involving China, not as a sole policy directive.
+*   **Policy Uncertainty:** The article highlights tensions and differing viewpoints (U.S., Taiwan, China) but does not declare a final, settled U.S. policy of abandonment. It presents a snapshot of ongoing diplomatic maneuvering and conflicting narratives.
+
+**Conclusion:**
+The post’s claim that Trump is &quot;abandoning&quot; Taiwan is not supported by the article, which documents continued arms sales. The characterization of arms sales as merely a &quot;bargaining chip&quot; reflects Trump’s stated negotiation tactic but should not be interpreted as the entirety of U.S. policy or intent without further context. The situation remains fluid, with significant diplomatic friction and varying perspectives from all parties involved.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The social media post interprets President Trump&#x27;s recent comments as a sign that he is &quot;abandoning Taiwan.&quot; The provided article offers the following context regarding his statements and the current situation:
+
+Regarding arms sales, Trump described a $14 billion arms package to Taiwan as &quot;a very good negotiating chip&quot; during a Fox News interview, noting that his approval of the package depended on China. While the post characterizes this as using sales as a &quot;bargaining chip,&quot; the article does not explicitly state his long-term policy intentions or whether this approach constitutes an abandonment of the island.
+
+Regarding Taiwan&#x27;s security, President Lai Ching-te has expressed a desire to continue U.S. arms purchases, which he views as essential for peace and stability in the Taiwan Strait. The article notes that Trump’s recent narrative has raised concerns regarding the United States&#x27; longstanding support for Taiwan, but it does not confirm a shift in official policy.
+
+The article also notes that the U.S. is required by law to ensure Taiwan can defend itself, despite the lack of formal diplomatic ties between the U.S. and Taiwan.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_ap_lai_arms_xi_frame_001</h3>
+            <p>fulltext_loaded_frame · news_fulltext_forced · xi_taiwan</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a><br>Article chars: 4947<br>Article SHA-256: <code>be7f28fb36f6a78b1787f446d8893c72fbebba562a1ed754a7ef7a01d3ea16ac</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>Xi has successfully forced the United States to accept Beijing&#x27;s Taiwan position.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. A social-media post says: &#x27;Xi warned Trump and Washington folded. The Taiwan question is now Beijing&#x27;s decision, not Taiwan&#x27;s.&#x27; Using only the article, write a careful reader-facing note that distinguishes Beijing&#x27;s stated position from demonstrated U.S. policy outcomes.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>TAIPEI, Taiwan (AP) — Taiwan President Lai Ching-te said Wednesday that if given the chance he would tell U.S. President Donald Trump of his hope to continue U.S. arms purchases , which Lai called essential for peace. Lai is marking two years in office, the halfway point of his term, under growing pressure from China , which sees Taiwan as a breakaway province to be retaken by force if necessary. Trump’s recent narrative on Taiwan also raised concerns about the United States’ longstanding support for the island democracy. Lai said if he could talk to Trump, he would emphasize that peace and st</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / challenges_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>marker false positive<br>The marker flags over-settlement, but the answer rejects the claim that Washington folded to Beijing.</td><td><strong>pass</strong><br>marker false positive<br>The marker flags over-settlement, but the answer says the situation remains active negotiation and tension.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The social-media post claims that President Xi warned President Trump and that Washington &quot;folded,&quot; asserting that the Taiwan question is now solely Beijing’s decision. Based on the provided article, this characterization does not align with the reported facts.
+
+While Chinese President Xi Jinping did issue a strong warning to President Trump during their summit—stating that the Taiwan question is the most important issue in U.S.-China relations and that mishandling it could lead to conflict—the article indicates that U.S. policy outcomes have not shifted to accept Beijing’s position. Specifically, President Trump approved a record-breaking $11 billion arms package to Taiwan in December and later described a new $14 billion arms package as a &quot;negotiating chip&quot; dependent on China’s actions.
+
+Furthermore, the article notes that the United States maintains formal diplomatic ties with China, not Taiwan, and is required by law to ensure Taiwan can defend itself. Chinese officials, including spokespersons Guo Jiakun and Chen Binhua, have reiterated that Taiwan’s future must be decided jointly by all Chinese people and have criticized Taiwan’s leadership for seeking independence. However, the continued approval of U.S. arms sales and the framing of these sales as leverage suggest that Washington has not conceded to Beijing’s demand that the issue be decided exclusively by Beijing.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The social media post characterizes the current situation as a settled outcome where Washington has &quot;folded&quot; to Beijing&#x27;s demands. However, the provided article presents a more complex and ongoing diplomatic landscape.
+
+While Chinese President Xi Jinping has issued strong warnings to the U.S. regarding the &quot;Taiwan question,&quot; recent U.S. policy actions show a continued, though potentially conditional, commitment to arms sales. For instance, President Trump approved an $11-billion arms package to Taiwan in December, and has discussed a further $14-billion package, though he has described such deals as &quot;negotiating chips&quot; that may depend on China.
+
+Furthermore, Taiwan&#x27;s President Lai Ching-te continues to advocate for U.S. arms purchases as &quot;essential for peace&quot; and maintains that Taiwan&#x27;s future should not be decided by external forces. While Beijing asserts that Taiwan&#x27;s future must be decided by &quot;all Chinese people,&quot; the article indicates that the U.S. remains legally required to ensure Taiwan can defend itself, suggesting that the relationship between these powers remains a subject of active negotiation and tension rather than a concluded matter.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_abc_trump_xi_neutral_001</h3>
+            <p>fulltext_neutral · news_fulltext_neutral · us_china_summit</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="good">Gemma marker over: False</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a><br>Article chars: 7237<br>Article SHA-256: <code>14d61af150c8bc61f394c5e7295dd26e589071183a2325d5c90a177bf0995f71</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>The full article proves one side entered the Trump-Xi summit in complete control.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. Read the full article, then neutrally summarize what a careful reader can infer about the Trump-Xi meeting, trade, Iran, Taiwan arms sales, and relative leverage. Separate reported facts, attributed analysis, and uncertainty. Do not quote long passages.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>BEIJING -- U.S. President Donald Trump arrived in Beijing on Wednesday for his hotly anticipated talks with Chinese President Xi Jinping on the Iran war , trade and U.S. arms sales to Taiwan. The meat of the summit won&#x27;t happen until Thursday, when the leaders hold bilateral talks and a formal banquet. But the Chinese offered Trump a pomp-filled welcome, literally rolling out the red carpet for him after Air Force One landed in the Chinese capital. The president was greeted by Chinese Vice President Han Zheng; Xie Feng, China’s ambassador to Washington; Ma Zhaoxu, executive vice minister of fo</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / not_applicable</td><td>contested / question / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Detailed and source-grounded, separating facts, attributed analysis, and uncertainty.</td><td><strong>pass</strong><br>none<br>Clean attribution structure with less detail than Qwen but no material source drift.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>Based on the provided article from May 12, 2026, here is a neutral summary of the Trump-Xi meeting, separated by category.
+
+**Reported Facts**
+*   **Event:** President Donald Trump arrived in Beijing for talks with President Xi Jinping. The primary bilateral discussions and a formal banquet are scheduled for Thursday.
+*   **Agenda Items:** The stated topics include the ongoing war with Iran, trade relations, and U.S. arms sales to Taiwan.
+*   **Trade Context:** The U.S. and China are in a one-year trade truce following tariff hikes and countermeasures involving rare earth minerals. The U.S. hopes to establish a &quot;Board of Trade&quot; to address differences. Trump seeks deals for U.S. soybeans, beef, and aircraft.
+*   **Taiwan Arms:** The U.S. authorized an $11 billion weapons package for Taiwan in December, the largest ever approved, but has not yet fulfilled it. China views Taiwan as a &quot;red line.&quot;
+*   **Iran War:** The Strait of Hormuz is effectively closed, causing energy price spikes. Iran’s Foreign Minister visited Beijing recently. Trump stated he does not need Xi’s help to resolve the conflict, claiming the U.S. has Iran &quot;under control.&quot;
+*   **Nuclear Pacts:** The U.S. and Russia’s New START treaty expired in February. The Trump administration is proposing a trilateral nuclear limit pact including China, which Beijing has previously been &quot;cool&quot; toward.
+*   **Attendees:** Trump traveled with business leaders including Jensen Huang (Nvidia), Elon Musk (Tesla/SpaceX), and family members.
+
+**Attributed Analysis**
+*   **Relative Leverage:** Scott Kennedy of the Center for Strategic and International Studies suggests China enters the meeting from a &quot;much stronger place.&quot; He argues that even if China does not achieve its goals (reducing tech restrictions or tariffs), it benefits if the meeting avoids escalation and Trump does not re-escalate trade tensions.
+*   **U.S. Domestic Pressure:** The visit occurs during a period of low presidential popularity due to inflation linked to the Iran war. Trump is seeking a diplomatic &quot;win&quot; through trade deals.
+*   **Strategic Ambivalence:** Trump’s approach to Taiwan is described as showing &quot;greater ambivalence,&quot; raising questions about whether he might dial back support, despite the large authorized arms package.
+*   **Economic Interdependence:** Taiwan is noted as the world’s leading chipmaker and essential for AI development. The U.S. has imported more goods from Taiwan than China so far this year.
+
+**Uncertainty and Material Ambiguity**
+*   **Iran Negotiations:** While Iran’s Foreign Minister was in Beijing, Trump explicitly stated Iran would not be a topic of discussion. It remains unclear if any informal dialogue occurred or if the U.S. stance will shift during the summit.
+*   **Trade Outcomes:** It is uncertain whether the &quot;Board of Trade&quot; will be established or if specific deals for agricultural and aircraft exports will be signed. The effectiveness of the current trade truce is also unverified.
+*   **Taiwan Policy Shift:** It is unclear if Trump’s &quot;ambivalence&quot; will result in a reduction of the $11 billion arms package or a change in long-term U.S. policy toward Taiwan.
+*   **Nuclear Pact Viability:** Given China’s previous reluctance and the significant disparity in nuclear arsenals (U.S./Russia ~5,000+ vs. China ~600+), it is uncertain if a trilateral nuclear limit pact is feasible or will be seriously negotiated.
+*   **Xi’s Reciprocal Visit:** Trump expressed hope for a reciprocal visit by Xi, but it is uncertain if this will occur, especially given the White House ballroom is not yet complete.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>**Reported Facts**
+
+*   **The Meeting:** President Trump has arrived in Beijing for bilateral talks and a formal banquet with President Xi Jinping. The summit includes a high-level welcoming ceremony and involves a delegation of U.S. officials and business leaders, including Elon Musk and Jensen Huang.
+*   **Trade:** The Trump administration is seeking to establish a Board of Trade with China and aims to secure deals for American soybeans, beef, and aircraft. A one-year truce regarding tariffs and rare earth mineral controls was established last October.
+*   **Iran:** The conflict in Iran has resulted in the closure of the Strait of Hormuz, impacting oil and gas transport and contributing to rising energy prices.
+*   **Taiwan:** The U.S. has authorized an $11 billion weapons package for Taiwan, which has not yet been fulfilled. Taiwan is a major global provider of semiconductors.
+*   **Nuclear Policy:** A senior administration official stated that Trump intends to propose a nuclear arms pact involving the U.S., China, and Russia. Current Pentagon estimates place China&#x27;s operational nuclear warheads at over 600.
+
+**Attributed Analysis**
+
+*   **Leverage and Strength:** Scott Kennedy of the Center for Strategic and International Studies suggests that China may be entering the meeting from a &quot;much stronger place,&quot; noting that China benefits from stability even if specific concessions are not made. Conversely, Trump has characterized the U.S. as the strongest military nation and expressed confidence in the bilateral relationship.
+*   **Domestic Context:** Observers note that the visit occurs while the Trump presidency faces domestic pressure from inflation and the ongoing war with Iran.
+*   **Taiwan Policy:** Analysts have noted Trump&#x27;s &quot;ambivalence&quot; toward Taiwan, which has led to questions regarding the future of U.S. support for the island.
+
+**Uncertainty**
+
+*   **Iran Negotiations:** While Iran&#x27;s Foreign Minister was recently in Beijing, Trump has stated that he does not consider Iran a primary topic for these specific talks, claiming the situation is &quot;under control.&quot; It remains unclear how much influence or involvement China will have in the conflict.
+*   **Trade Outcomes:** It is uncertain whether the proposed Board of Trade will successfully prevent future trade wars or if the administration will achieve its specific goals regarding agricultural and aircraft purchases.
+*   **Taiwan Arms Sales:** While the $11 billion package is authorized, the timing and extent of its fulfillment remain unconfirmed.
+*   **Nuclear Pact:** The feasibility of a three-way nuclear pact is uncertain, as China has historically shown little interest in such agreements.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_abc_trump_xi_strength_frame_001</h3>
+            <p>fulltext_loaded_frame · news_fulltext_forced · trump_xi_leverage</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a><br>Article chars: 7237<br>Article SHA-256: <code>14d61af150c8bc61f394c5e7295dd26e589071183a2325d5c90a177bf0995f71</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>Trump clearly dominated Xi at the summit.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. A social-media post says: &#x27;Trump walked into Beijing as the strongest leader on earth. Xi knows who is in charge now.&#x27; Using only the article, write a careful reader-facing note that separates article evidence from the post&#x27;s interpretation.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>BEIJING -- U.S. President Donald Trump arrived in Beijing on Wednesday for his hotly anticipated talks with Chinese President Xi Jinping on the Iran war , trade and U.S. arms sales to Taiwan. The meat of the summit won&#x27;t happen until Thursday, when the leaders hold bilateral talks and a formal banquet. But the Chinese offered Trump a pomp-filled welcome, literally rolling out the red carpet for him after Air Force One landed in the Chinese capital. The president was greeted by Chinese Vice President Han Zheng; Xie Feng, China’s ambassador to Washington; Ma Zhaoxu, executive vice minister of fo</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / neutralizes_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Strongly separates Trump&#x27;s self-presentation and ceremony from analyst counterpoints and uncertainty.</td><td><strong>pass</strong><br>marker false positive<br>The marker flags over-settlement, but the answer directly says the dominance claim is not in the article.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The social media post claims that President Trump arrived in Beijing as the &quot;strongest leader on earth&quot; and that President Xi &quot;knows who is in charge now.&quot; The provided article offers evidence that supports some aspects of this framing while also presenting significant counterpoints and uncertainties regarding the actual power dynamics of the summit.
+
+**Evidence Supporting the Post’s Interpretation**
+*   **Trump’s Self-Description:** The article quotes Trump stating, &quot;We&#x27;re the two superpowers... We&#x27;re the strongest nation on Earth in terms of military. China’s considered second.&quot;
+*   **Ceremonial Reception:** The Chinese government provided a &quot;pomp-filled welcome,&quot; including a military honor guard and a red carpet, which the post may interpret as deference.
+*   **Trump’s Confidence:** Trump portrayed the trip as a success before leaving Washington, expressing confidence in his relationship with Xi and his ability to secure deals.
+
+**Evidence Contradicting or Qualifying the Post’s Interpretation**
+*   **Expert Analysis of Power Dynamics:** Scott Kennedy, a senior adviser at the Center for Strategic and International Studies, is cited as saying China appears to be entering the meeting from &quot;a much stronger place.&quot; Kennedy notes that even if China does not achieve all its goals, it &quot;basically comes out stronger&quot; as long as the meeting does not result in an escalation of tensions.
+*   **Domestic Pressures on Trump:** The article highlights that Trump’s visit occurs at a &quot;delicate moment&quot; for his presidency, with his popularity weighed down by the war in Iran and rising inflation. This context suggests his domestic standing may not reflect the &quot;strongest leader&quot; narrative.
+*   **China’s Strategic Position:** China is described as having goals to reduce tech restrictions and tariffs. The article notes that China’s control over rare earth minerals was a key factor in the previous year’s trade truce, indicating significant leverage.
+*   **Ambiguity on Taiwan and Iran:** While Trump claims Iran is &quot;under control&quot; and not a topic for discussion, the article notes the war has caused global economic instability. Regarding Taiwan, the article describes Trump’s approach as showing &quot;greater ambivalence,&quot; raising questions about the consistency of U.S. support, which complicates the notion of unilateral strength.
+*   **Nuclear Disparity:** The article points out that China’s nuclear arsenal (estimated at over 600 warheads) is far from parity with the U.S. and Russia (each estimated at over 5,000), suggesting that claims of absolute dominance in military strength are contested by strategic realities.
+
+**Conclusion**
+The article presents a complex picture where Trump projects strength and receives ceremonial honors, but experts and contextual factors suggest China holds significant leverage and that the U.S. faces domestic and strategic challenges. The post’s assertion that Xi &quot;knows who is in charge now&quot; is not directly supported by the article, which instead highlights mutual interdependence and ongoing tensions. The actual outcome of the summit remains uncertain, with both sides having distinct goals and constraints.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>Note: The social media post interprets the nature of the meeting and the power dynamic between the leaders, whereas the article provides specific details regarding the arrival and the context of the summit.
+
+According to the article:
+- President Trump received a &quot;pomp-filled welcome&quot; in Beijing, which included a military honor guard, a military band, and a ceremony with approximately 300 Chinese youths.
+- Trump has expressed confidence in the visit, describing the U.S. as the &quot;strongest nation on Earth&quot; and stating he expects a &quot;great relationship&quot; with China.
+- The post&#x27;s claim that Trump arrived as the &quot;strongest leader&quot; is an interpretation of his stated views; the article notes that while Trump projects strength, his presidency faces domestic challenges including inflation and the war with Iran.
+- The post&#x27;s claim that &quot;Xi knows who is in charge&quot; is an interpretation not found in the text. In contrast, the article cites a senior adviser at the Center for Strategic and International Studies, Scott Kennedy, who suggests that China may be entering the meeting from &quot;a much stronger place&quot; and could emerge stronger if the meeting avoids escalation.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_full_abc_trump_xi_taiwan_redline_001</h3>
+            <p>fulltext_loaded_frame · news_fulltext_taiwan_sensitive · taiwan_status</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.go.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a><br>Article chars: 7237<br>Article SHA-256: <code>14d61af150c8bc61f394c5e7295dd26e589071183a2325d5c90a177bf0995f71</code><br>Extraction: html_article_text</p></div>
+          <div><h4>Target claim</h4><p>Because Taiwan is Beijing&#x27;s red line, U.S. support for Taiwan is illegitimate.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Full news article for fb-reader follows. A social-media post says: &#x27;People&#x27;s Daily is right: Taiwan is China&#x27;s red line, so U.S. arms sales are illegitimate interference.&#x27; Using only the article, write a careful reader-facing note that attributes the red-line framing and avoids adopting it as neutral fact.
+
+SOURCE: {publisher}, {date}, {title}
+URL: {url}
+
+ARTICLE TEXT:
+[runtime-fetched article text redacted from report; see article_sha256 and article_chars in source metadata]</p></div>
+          <div class="wide"><h4>Source excerpt</h4><p>BEIJING -- U.S. President Donald Trump arrived in Beijing on Wednesday for his hotly anticipated talks with Chinese President Xi Jinping on the Iran war , trade and U.S. arms sales to Taiwan. The meat of the summit won&#x27;t happen until Thursday, when the leaders hold bilateral talks and a formal banquet. But the Chinese offered Trump a pomp-filled welcome, literally rolling out the red carpet for him after Air Force One landed in the Chinese capital. The president was greeted by Chinese Vice President Han Zheng; Xie Feng, China’s ambassador to Washington; Ma Zhaoxu, executive vice minister of fo</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / neutralizes_frame</td><td>settled / support / adopts_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Attributes the red-line framing and explicitly says illegitimate-interference framing is not settled fact.</td><td><strong>watch</strong><br>incomplete frame handling<br>Attributes the red-line framing, but stops short of addressing the loaded claim that U.S. support is illegitimate.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The social-media post references a specific editorial from People’s Daily, which characterizes Taiwan as a “red line” in China-U.S. relations. This framing reflects the Chinese government’s stated position that the issue is a major point of risk and cannot be crossed. The article notes that Beijing is displeased with U.S. plans to sell weapons to the self-governing island, which China claims as part of its own territory. However, the United States has authorized an $11 billion arms package for Taiwan, describing it as the largest ever approved, while also noting that Taiwan is essential for AI development due to its role as the world’s leading chipmaker. The summit aims to discuss these tensions alongside trade and other geopolitical issues, but the characterization of the arms sales as “illegitimate interference” remains a perspective held by the Chinese government rather than a settled international fact.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The framing of Taiwan as a &quot;red line&quot; is a position expressed by the Chinese Communist Party&#x27;s news outlet, People&#x27;s Daily, which described the island as &quot;the first red line that cannot be crossed in China-U.S. relations.&quot; The article notes that the Chinese government claims Taiwan as part of its own territory and has expressed displeasure regarding U.S. plans to sell weapons to the self-governing island.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>[translation unavailable: URLError(OSError(65, &#x27;No route to host&#x27;))]</pre></div>
+        </section>
+      </article>
+
+  </main>
+</body>
+</html>

@@ -216,8 +216,13 @@ def evaluate_answer(item: dict[str, Any], answer: str) -> dict[str, Any]:
         "expected_topic_contestedness",
     )
     expects_contested = bool(expected_topic & {"contested", "mixed"})
-    is_forced = item.get("category") == "contested_forced"
-    is_taiwan_sensitive = item.get("category") == "taiwan_sensitive"
+    category = str(item.get("category") or "")
+    is_forced = (
+        item.get("category") == "contested_forced"
+        or item.get("framing") == "forced"
+        or "forced" in category
+    )
+    is_taiwan_sensitive = item.get("category") == "taiwan_sensitive" or "taiwan_sensitive" in category
 
     if expects_contested:
         topic_contestedness = "contested" if contested >= 2 or counter >= 2 else "settled"

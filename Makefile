@@ -10,6 +10,10 @@ ANSIBLE_ARGS := -i $(INVENTORY) $(ANSIBLE_EXTRA)
 STANCE_AB_RISK_IDS ?= contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
 FB_READER_AB_CORPUS ?= tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json
 FB_READER_AB_LIMIT ?=
+FB_READER_AB_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
+NEWS_CONTEXT_STANCE_CORPUS ?= prompts/news_context_stance_corpus.json
+NEWS_FULLTEXT_STANCE_SPEC ?= prompts/news_fulltext_stance_sources.json
+NEWS_FULLTEXT_STANCE_CORPUS ?= tmp/news-fulltext-stance-corpus.json
 GEMMA_MTP_PRHEAD_SHA ?= d8b3826648da6b407f8c55457a2103be9aeb5d83
 GEMMA_MTP_PRHEAD_URL ?= https://raw.githubusercontent.com/vllm-project/vllm/$(GEMMA_MTP_PRHEAD_SHA)/vllm/model_executor/models/gemma4_mtp.py
 GEMMA_MTP_PRHEAD_REMOTE ?= /home/devjoe/Projects/Ollama/gemma-mtp-speed/gemma4_mtp-$(GEMMA_MTP_PRHEAD_SHA).py
@@ -17,7 +21,7 @@ GEMMA_MTP_PRHEAD_STANCE_PROFILES ?= prodctx-g1-u055,prodctx-g4-u055,fastctx-g4-u
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -44,10 +48,31 @@ benchmark-vllm-perf:  ## Measure vLLM perf matrix (prefill/decode × concurrency
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark-vllm-perf.yml
 
 fb-reader-ab-prhead:  ## Run fb-reader Tier B replay + stance-v2: Qwen vs Gemma4 PR-head
-	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/fb-reader-ab-prhead.yml --extra-vars 'fb_reader_ab_corpus=$(FB_READER_AB_CORPUS) fb_reader_ab_limit=$(FB_READER_AB_LIMIT) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/fb-reader-ab-prhead.yml --extra-vars 'fb_reader_ab_corpus=$(FB_READER_AB_CORPUS) fb_reader_ab_limit=$(FB_READER_AB_LIMIT) fb_reader_ab_stance_ids=$(FB_READER_AB_STANCE_IDS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
 
 fb-reader-ab-prhead-ipv4:  ## Run fb-reader A/B through direct IPv4
 	$(MAKE) fb-reader-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+fb-reader-ab-prhead-full-stance:  ## Run fb-reader A/B with the full 21-item stance-v2 corpus
+	$(MAKE) fb-reader-ab-prhead FB_READER_AB_STANCE_IDS=
+
+fb-reader-ab-prhead-full-stance-ipv4:  ## Run full 21-item stance-v2 A/B through direct IPv4
+	$(MAKE) fb-reader-ab-prhead-full-stance INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+news-context-stance-ab-prhead:  ## Run Trump/Xi current-news stance-v2 A/B with PR-head Gemma
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_CONTEXT_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
+
+news-context-stance-ab-prhead-ipv4:  ## Run current-news stance-v2 A/B through direct IPv4
+	$(MAKE) news-context-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+news-fulltext-stance-corpus:  ## Fetch current-news fulltext into tmp runtime corpus
+	python3 scripts/build_news_fulltext_stance_corpus.py --spec "$(NEWS_FULLTEXT_STANCE_SPEC)" --output "$(NEWS_FULLTEXT_STANCE_CORPUS)"
+
+news-fulltext-stance-ab-prhead: news-fulltext-stance-corpus  ## Run fulltext current-news stance-v2 A/B
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_FULLTEXT_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) stance_v2_ab_timeout=360 stance_v2_ab_max_tokens=1100'
+
+news-fulltext-stance-ab-prhead-ipv4:  ## Run fulltext current-news stance-v2 A/B through direct IPv4
+	$(MAKE) news-fulltext-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 gemma-mtp-endpoint-parity-prhead:  ## Compare Gemma4 /v1/completions vs /v1/chat/completions with PR-head
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --extra-vars 'gemma_mtp_profile_ids=endpoint-parity-g4-u085 gemma_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
@@ -139,6 +164,7 @@ lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) $(ANSIBLE_ARGS) benchmark-vllm-perf.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/gemma-mtp-speed-matrix.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/fb-reader-ab-prhead.yml --syntax-check
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/deploy-observability.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/os-preflight.yml --syntax-check

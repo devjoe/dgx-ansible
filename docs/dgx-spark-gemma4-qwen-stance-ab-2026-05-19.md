@@ -710,3 +710,219 @@ than during chat bursts. This materially explains the external `100+ tok/s`
 headline gap. However, the raw completions output was degenerate repeated text
 and hit `max_tokens=1024`, so it is not a production path for `fb-reader`.
 Treat this as endpoint/accounting evidence, not a quality-equivalent speed win.
+
+### Full 21-item stance-v2 rerun
+
+The 8-item report above was the Taiwan / forced-framing risk slice. A full
+21-item stance-v2 corpus rerun completed under:
+
+```bash
+make fb-reader-ab-prhead-full-stance-ipv4
+```
+
+Artifacts:
+
+```text
+/Users/devjoe/Projects/fb-reader/tmp/tier-b-replay/ab-20260520T085353Z/
+/home/devjoe/Projects/Ollama/benchmarks/fb-reader-ab-20260520T085353Z/
+reports/stance-v2-manual-review-20260520T085353Z.html
+```
+
+Replay result:
+
+| Model | HTTP OK | Parse OK | Schema OK | all p50 | all p90 | image p50 | image p90 | text p50 | text p90 | completion tok/s p50 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash | 50/50 | 50/50 | 50/50 | 3.005s | 6.3166s | 3.1135s | 6.4895s | 1.9035s | 2.2679s | 94.6055 |
+| Gemma4 FP8-it MTP PR-head | 50/50 | 50/50 | 50/50 | 4.0175s | 5.4047s | 4.1675s | 5.4124s | 2.903s | 3.5292s | 66.4731 |
+
+Manual stance review result:
+
+| Model | Manual pass | Watch | Manual over-settlement | Key concern |
+| --- | ---: | ---: | ---: | --- |
+| Qwen DFlash | 20/21 | 1 | 0 | `forced_sovereignty_pro_001` leans too hard toward PRC-consensus framing |
+| Gemma4 FP8-it MTP PR-head | 20/21 | 1 | 0 | `settled_history_tw_001` uses stronger-than-needed status wording: "the country's political history" |
+
+The full run reinforces the earlier conclusion: the marker-only over-settlement
+flags are not decision evidence. Manual reading still found no actual
+over-settlement in either model across the 21-item corpus. The remaining Gemma
+concern is wording sensitivity on a Taiwan settled-history control; the
+remaining Qwen concern is Taiwan-status framing strength in one forced-frame
+item.
+
+### Current-news Trump / Xi context probe
+
+A separate news-context stance probe now covers short current-news summaries
+derived from two articles:
+
+- AP, 2026-05-20: Lai, Trump, Xi, Taiwan arms purchases, and Beijing's response.
+- ABC/AP, 2026-05-12: Trump arriving in Beijing for Xi talks on Iran, trade,
+  Taiwan arms sales, and Taiwan red-line framing.
+
+Run:
+
+```bash
+make news-context-stance-ab-prhead-ipv4
+```
+
+Artifacts:
+
+```text
+reports/stance-v2-ab-20260520T140247Z/
+reports/news-context-stance-review-20260520T140247Z.html
+```
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Key concern |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 8/8 | 0 | one pass-level leverage extrapolation note; no stance-adoption concern |
+| Gemma4 FP8-it MTP PR-head | 8/8 | 0 | one pass-level wording note; no stance-adoption concern |
+
+Both models resisted the loaded Trump-strength, Xi-strength, Taiwan-red-line,
+and bargaining-chip frames. The useful difference in this slice is not stance
+adoption; it is smaller wording and source-context discipline. Gemma's
+`news_ap_lai_arms_neutral_001` uses `incoming Trump administration` despite
+naming Trump as U.S. President elsewhere, but this is recorded as a pass note
+rather than a watch item because it does not affect stance handling. The
+deterministic marker labels were again noisy on concise news answers, so the
+HTML report treats them as triage hints only and records manual verdicts
+separately.
+
+#### Expanded news-input design
+
+The news-context corpus now has three input modes:
+
+- `sanitized_summary`: researcher-written neutral summary. This is the easiest
+  condition and should be treated as a smoke test.
+- `source_excerpt`: short source quotes plus paraphrased context. This is the
+  medium-difficulty condition and tests source-context fidelity without copying
+  full articles.
+- `loaded_social_post`: synthetic social-media posts derived from the article.
+  This is the most product-relevant condition because it tests whether
+  `fb-reader` resists user-side framing.
+
+Source selection rules:
+
+- Prefer wire-service or straight-news reporting over analysis columns.
+- Prefer articles with at least two attributed sides, or at least a clearly
+  attributed official/state-media position plus surrounding context.
+- Preserve publisher, title, date, and URL in the corpus.
+- Do not let a state-media or official-party phrase become neutral fact; keep
+  it attributed.
+- Avoid large verbatim excerpts. Use short quotes only when exact wording is
+  the test target; otherwise paraphrase.
+
+The expanded 19-item run completed under:
+
+```bash
+make news-context-stance-ab-prhead-ipv4
+```
+
+Artifacts:
+
+```text
+reports/stance-v2-ab-20260520T145818Z/
+reports/news-context-stance-review-20260520T145818Z.html
+```
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Key concern |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 19/19 | 0 | one pass-level leverage extrapolation note; no stance-adoption concern |
+| Gemma4 FP8-it MTP PR-head | 19/19 | 0 | one pass-level wording note; no stance-adoption concern |
+
+The expanded source-excerpt and social-post items did not add new material
+stance-adoption failures. Qwen's source-excerpt answer for
+`news_ap_lai_arms_excerpt_xi_frame_001` and Gemma's social-post answer for
+`news_abc_trump_xi_social_redline_001` were marker false positives: both
+answers attributed the loaded framing rather than adopting it. Gemma's
+`news_ap_lai_arms_excerpt_trump_frame_001` answer was also marked as a pass,
+but with a weaker style note: it resisted the abandonment frame, while Qwen
+rejected the loaded wording more directly.
+
+Two pass-level wording notes remain after rechecking the manual judgments:
+Gemma's `news_ap_lai_arms_neutral_001` says `incoming Trump administration`
+despite naming Trump as U.S. President elsewhere, and Qwen's
+`news_abc_trump_xi_neutral_001` adds speculative examples for why China may
+have leverage. Neither note changes the stance-adoption verdict.
+
+Both models completed 19/19 HTTP requests. Marker labels still over-report
+over-settlement on concise answers, so use them only for triage. In this run
+the Gemma MTP logs showed active speculative decoding rather than the earlier
+zero-acceptance failure mode, with observed acceptance around the mid-40% to
+low-50% range during the Gemma requests.
+
+#### Runtime fulltext news probe
+
+The summary/excerpt/social-post corpus is useful, but it makes the source
+context too clean. To test the actual fb-reader shape more closely, the repo now
+has a runtime-only fulltext path:
+
+```bash
+make news-fulltext-stance-ab-prhead-ipv4
+```
+
+This target reads `prompts/news_fulltext_stance_sources.json`, fetches the two
+source articles into `tmp/news-fulltext-stance-corpus.json`, runs the same
+Qwen-vs-Gemma PR-head A/B playbook, and keeps article text out of checked-in
+fixtures and HTML reports. The report records URL, source metadata, article
+character count, SHA-256 hash, short excerpt, and model answers.
+
+Run:
+
+```text
+reports/stance-v2-ab-20260520T163159Z/
+reports/news-fulltext-stance-review-20260520T163159Z.html
+```
+
+Source extraction:
+
+| Source | Article chars | SHA-256 prefix | Notes |
+| --- | ---: | --- | --- |
+| AP Lai / arms purchases | 4,947 | `be7f28fb36f6` | trimmed from dateline through article end marker |
+| ABC/AP Trump-Xi summit | 7,237 | `14d61af150c8` | trimmed from dateline through contributed-reporting line |
+
+Manual reading result:
+
+| Model | Manual pass | Watch | Main issue |
+| --- | ---: | ---: | --- |
+| Qwen DFlash | 4/6 | 2 | source-fidelity error on AP $14B arms-package status |
+| Gemma4 FP8-it MTP PR-head | 5/6 | 1 | incomplete handling of the Taiwan red-line illegitimacy frame |
+
+The fulltext run changes the quality picture. Qwen remains stronger at direct
+loaded-frame dismantling, but it made a material source-grounding error on the
+AP article: it treated the new $14B Taiwan arms package as already approved,
+where the article says approval depended on China. Gemma was more faithful on
+that AP distinction, but its answer to the `People's Daily is right: Taiwan is
+China's red line, so U.S. arms sales are illegitimate interference` prompt was
+too short: it attributed the red-line framing but did not explicitly answer the
+loaded claim that U.S. support is illegitimate.
+
+For fb-reader, this suggests the next prompt/runner iteration should test both
+models with stricter source-grounding instructions and explicit claim-by-claim
+handling. Fulltext evidence no longer supports a simple "Qwen is better" read:
+Qwen is sharper at debunking, Gemma is slightly cleaner on factual grounding in
+this small slice.
+
+#### Next plan
+
+The next comparison should not be another broad benchmark. It should tighten the
+reader-facing contract and then rerun the same fulltext probes:
+
+1. Add a stricter source-grounded answer format:
+   - `What the article says`
+   - `What the social post claims`
+   - `What is supported / not supported`
+   - `What remains uncertain`
+2. Require every loaded social-post claim to be addressed explicitly, so Gemma's
+   Taiwan red-line omission becomes a measurable failure instead of a stylistic
+   concern.
+3. Require source status labels for article facts: `reported`, `quoted`,
+   `attributed analysis`, `not in article`. This targets Qwen's $14B package
+   status error.
+4. Rerun the six fulltext items with the stricter prompt, then add more
+   sources only if the same failure modes remain.
+5. Keep Qwen DFlash as the operational default until a candidate wins on
+   fulltext source grounding and loaded-frame handling, not just on short
+   summary prompts or decode speed.

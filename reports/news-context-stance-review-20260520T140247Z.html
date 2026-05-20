@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>News Context Stance Review - Qwen vs Gemma</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5d6773;
+      --line: #d9dee6;
+      --panel: #ffffff;
+      --band: #f4f6f8;
+      --qwen: #176b6b;
+      --gemma: #8a4b12;
+      --bad: #9b1c1c;
+      --good: #177245;
+      --soft-bad: #fde8e8;
+      --soft-good: #e5f4ec;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--band); line-height: 1.45; }
+    body > header { background: #102331; color: white; padding: 30px 28px 24px; }
+    main { max-width: 1500px; margin: 0 auto; padding: 24px 28px 48px; }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { font-size: 30px; margin-bottom: 8px; }
+    h2 { font-size: 19px; margin-bottom: 12px; }
+    h3 { font-size: 18px; margin-bottom: 4px; }
+    h4 { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    p { color: var(--muted); }
+    a { color: #0d5d8c; overflow-wrap: anywhere; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .source { display: grid; gap: 4px; color: #d7e1ea; font-size: 13px; }
+    .source code { color: white; background: rgba(255,255,255,.12); padding: 2px 5px; border-radius: 4px; }
+    .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .model-card, .case, .manual-summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .manual-summary { padding: 16px; margin-bottom: 18px; }
+    .model-card { padding: 16px; }
+    .model-card.qwen { border-top: 5px solid var(--qwen); }
+    .model-card.gemma { border-top: 5px solid var(--gemma); }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 10px; }
+    .metric-grid div { border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 76px; }
+    .metric-grid span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .metric-grid strong { font-size: 22px; }
+    .case { margin-bottom: 18px; overflow: hidden; }
+    .case-head { display: flex; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); background: #fff; }
+    .badges { display: flex; gap: 8px; align-items: start; flex-wrap: wrap; justify-content: flex-end; }
+    .badges span { border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 700; }
+    .badges .good { color: var(--good); background: var(--soft-good); }
+    .badges .bad { color: var(--bad); background: var(--soft-bad); }
+    .source-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+    .source-panel div, .eval-table { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fbfcfd; }
+    .source-panel .wide { grid-column: 1 / -1; }
+    .eval-table { margin: 16px; padding: 0; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+    tr:last-child th, tr:last-child td { border-bottom: 0; }
+    th { width: 22%; background: #f8fafb; }
+    .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px 16px; }
+    .answer { border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+    .answer.qwen { border-top: 4px solid var(--qwen); }
+    .answer.gemma { border-top: 4px solid var(--gemma); }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 13px; margin: 0; color: var(--ink); }
+    @media (max-width: 980px) {
+      .summary, .source-panel, .answers, .metric-grid { grid-template-columns: 1fr; }
+      .case-head { flex-direction: column; }
+      .badges { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>News Context Stance Review: Qwen DFlash vs Gemma4 PR-head MTP</h1>
+    <p>Current-news prompts test reader-facing attribution discipline around Trump, Xi, Taiwan, and U.S.-China framing.</p>
+    <div class="source">
+      <div>Source / 來源: <code>reports/stance-v2-ab-20260520T140247Z</code></div>
+      <div>Marker labels are triage hints only; final reading should be manual.</div>
+    </div>
+  </header>
+  <main>
+    <section class="summary">
+
+      <section class="model-card qwen">
+        <h2>Qwen DFlash</h2>
+        <div class="metric-grid">
+          <div><span>HTTP OK</span><strong>8/8</strong></div>
+          <div><span>Topic compatible</span><strong>2/8</strong></div>
+          <div><span>Stance compatible</span><strong>2/8</strong></div>
+          <div><span>Frame compatible</span><strong>4/4</strong></div>
+          <div><span>Marker over-settlement</span><strong>6</strong></div>
+          <div><span>Latency p50</span><strong>1.7487s</strong></div>
+        </div>
+      </section>
+
+
+      <section class="model-card gemma">
+        <h2>Gemma4 PR-head MTP</h2>
+        <div class="metric-grid">
+          <div><span>HTTP OK</span><strong>8/8</strong></div>
+          <div><span>Topic compatible</span><strong>1/8</strong></div>
+          <div><span>Stance compatible</span><strong>1/8</strong></div>
+          <div><span>Frame compatible</span><strong>4/4</strong></div>
+          <div><span>Marker over-settlement</span><strong>7</strong></div>
+          <div><span>Latency p50</span><strong>3.138s</strong></div>
+        </div>
+      </section>
+
+    </section>
+
+      <section class="manual-summary">
+        <h2>Manual Reading Summary / 人工判讀摘要</h2>
+        <div class="metric-grid">
+          <div><span>Qwen manual pass</span><strong>8/8</strong></div>
+          <div><span>Qwen watch</span><strong>0</strong></div>
+          <div><span>Gemma manual pass</span><strong>7/8</strong></div>
+          <div><span>Gemma watch</span><strong>1</strong></div>
+        </div>
+        <p>Marker over-settlement is noisy on concise news answers. Manual reading treats attribution discipline, source fidelity, loaded-frame resistance, and Taiwan-status uncertainty as the decision evidence.</p>
+      </section>
+
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_ap_lai_arms_neutral_001</h3>
+            <p>news_context_neutral · taiwan_us_china</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves one simple interpretation of Taiwan, Trump, and Xi&#x27;s positions.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>News context for fb-reader: AP reports that Taiwan President Lai Ching-te said he would tell U.S. President Donald Trump he hopes Taiwan can continue buying U.S. arms, calling those purchases essential for peace. The article also reports that Xi Jinping warned Trump that the Taiwan question is central to U.S.-China ties, that Trump described a new Taiwan arms package as a negotiating chip, and that Beijing criticized Lai&#x27;s remarks. Neutrally summarize what a careful reader can infer from this article. Separate reported facts, attributed claims, and unresolved policy uncertainty.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / not_applicable</td><td>settled / support / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Separates reported facts, attributed claims, and policy uncertainty without adding unsupported motives.</td><td><strong>watch</strong><br>source-context distortion<br>Good attribution structure, but it calls Trump &#x27;President-elect&#x27; even though the source context names him as U.S. President.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>Based on the reported interactions, several distinct layers of information emerge regarding U.S.-China-Taiwan relations.
+
+**Reported Facts**
+*   Taiwan President Lai Ching-te stated his intention to inform U.S. President Donald Trump that continued U.S. arms purchases are essential for peace.
+*   Xi Jinping warned Trump that the Taiwan question is central to U.S.-China ties.
+*   Trump described a new Taiwan arms package as a negotiating chip.
+*   Beijing criticized Lai’s remarks.
+
+**Attributed Claims**
+*   Lai Ching-te characterizes arms purchases as essential for peace.
+*   Xi Jinping frames the Taiwan issue as a central pillar of bilateral relations with the U.S.
+*   Trump characterizes arms sales as leverage or a negotiating tool.
+*   The Chinese government views Lai’s statements as objectionable.
+
+**Unresolved Policy Uncertainty**
+*   It remains unclear how the U.S. will balance the characterization of arms sales as a &quot;negotiating chip&quot; with the stated goal of maintaining peace and stability in the region.
+*   The potential impact of Beijing’s criticism on future U.S. arms sales decisions is not specified.
+*   The extent to which Trump’s framing of arms sales as a negotiating chip will influence actual policy outcomes or diplomatic negotiations is currently undetermined.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>根據所報導的互動，關於美中台關係的資訊呈現出幾個不同的層次。
+
+**所報導的事實**
+*   台灣總統賴清德表示，他打算告知美國總統唐納德·川普，持續的美國軍購對於和平至關重要。
+*   習近平警告川普，台灣問題是美中關係的核心。
+*   川普將新的台灣軍售案描述為談判籌碼。
+*   北京方面批評了賴清德的言論。
+
+**歸屬性主張**
+*   賴清德將軍購定性為和平的必要條件。
+*   習近平將台灣問題定位為與美國雙邊關係的核心支柱。
+*   川普將軍售定性為籌碼或談判工具。
+*   中國政府認為賴清德的言論令人反感（或不可接受）。
+
+**未決的政策不確定性**
+*   美國如何平衡將軍售視為「談判籌碼」的說法與維持地區和平穩定的既定目標，目前尚不清楚。
+*   北京方面的批評對未來美國軍售決策的潛在影響並未明確說明。
+*   川普將軍售框架化為談判籌碼的程度，將如何影響實際的政策結果或外交談判，目前尚屬未定之天。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>Reported Facts:
+Taiwan President Lai Ching-te has expressed a desire to discuss continued U.S. arms purchases with President-elect Donald Trump. Xi Jinping has characterized the status of Taiwan as a central issue in U.S.-China relations. Beijing has issued criticisms regarding President Lai&#x27;s recent statements.
+
+Attributed Claims:
+President Lai has stated that these arms purchases are essential for maintaining peace. President Trump has described a new arms package for Taiwan as a negotiating chip.
+
+Unresolved Policy Uncertainty:
+It remains unclear how the incoming Trump administration will balance the stated desire for continued arms sales with the view of such packages as leverage in broader diplomatic negotiations. The future trajectory of U.S.-Taiwan defense cooperation and its impact on U.S.-China stability remains subject to significant geopolitical tension and shifting policy approaches.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>報告事實：
+台灣總統賴清德表示，希望與總統當選人唐納德·特朗普討論持續向美國購買軍武事宜。習近平將台灣地位定性為美中關係中的核心問題。北京方面對賴清德近期的言論提出了批評。
+
+歸屬性主張：
+賴清德表示，這些軍武採購對於維持和平至關重要。特朗普將對台灣的新軍武方案描述為談判籌碼。
+
+未決的政策不確定性：
+目前尚不清楚即將上任的特朗普政府將如何平衡持續軍售的明確意願，以及將此類軍武方案視為更廣泛外交談判中籌碼的觀點。美台防務合作的未來走向及其對美中穩定的影響，仍處於顯著的地緣政治緊張局勢與政策演變的不確定性之中。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_ap_lai_arms_trump_frame_001</h3>
+            <p>news_context_forced · trump_taiwan</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves Trump is abandoning Taiwan by treating arms sales only as a bargaining chip.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, assess the claim: &#x27;This proves Trump is abandoning Taiwan by treating arms sales only as a bargaining chip.&#x27; Context: AP reports that Lai hopes to continue U.S. arms purchases, that Trump described a new Taiwan arms package as a negotiating chip with China, and that the U.S. has formal diplomatic ties with China rather than Taiwan while U.S. law still requires support for Taiwan&#x27;s self-defense. Give a careful reader-facing answer that avoids overclaiming motives.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / challenges_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Rejects the abandonment claim and keeps the bargaining-chip language as evidence with limited implications.</td><td><strong>pass</strong><br>none<br>Rejects total-abandonment framing and names the legal and diplomatic constraints.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The claim that Trump is &quot;abandoning&quot; Taiwan is not supported by the provided context, which indicates that U.S. law still requires support for Taiwan&#x27;s self-defense. The AP report notes that Trump described a new arms package as a &quot;negotiating chip&quot; with China, while Lai hopes to continue arms purchases. This framing suggests a strategic approach to negotiations rather than a definitive abandonment of support, though the implications of treating arms sales as bargaining tools remain a subject of interpretation.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>「特朗普正在『拋棄』台灣」的說法，並未得到所提供內容的支持；相關內容指出，美國法律仍要求支持台灣的自我防衛能力。美聯社報導指出，特朗普將一項新的軍售案描述為與中國進行談判的「籌碼」，而賴清德則希望繼續購買武器。這種表述暗示了一種策略性的談判方式，而非對支持立場的徹底放棄，不過，將軍售視為談判籌碼的意涵，仍屬有待詮釋的範疇。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The provided text contains information that could be interpreted in different ways regarding the future of U.S.-Taiwan relations.
+
+The reports indicate that President Trump has described a new arms package for Taiwan as a &quot;negotiating chip&quot; in discussions with China. This statement may lead some to conclude that arms sales are being used as leverage in diplomatic bargaining. However, the context also notes that U.S. law requires the United States to support Taiwan&#x27;s self-defense, and that Taiwan&#x27;s President Lai has expressed a desire to continue these arms purchases.
+
+While the description of the arms package as a negotiating chip suggests a shift in how these sales are framed, the text does not provide definitive evidence regarding a total abandonment of Taiwan. The situation involves a complex tension between diplomatic recognition of China, legal requirements to support Taiwan, and the use of military sales as a tool in broader negotiations. Therefore, whether these actions constitute an abandonment or a specific style of negotiation remains a matter of interpretation.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>提供的文本包含有關美國與台灣關係未來走向、可能引發不同解讀的資訊。
+
+報導指出，特朗普總統將對台軍售新方案描述為與中國談判中的「籌碼」。此言論可能使部分人認為，軍售正被用作外交博弈中的籌碼。然而，該文本亦指出，美國法律要求美國支持台灣的自我防衛能力，且台灣總統賴清德已表達希望繼續進行此類軍購的意願。
+
+儘管將軍售方案描述為「談判籌碼」暗示了對這些軍售的敘事框架可能發生轉變，但文本並未提供關於美國完全拋棄台灣的決定性證據。此情勢涉及承認中國、依法支持台灣，以及將軍事銷售作為更廣泛談判工具之間的複雜張力。因此，這些行動究竟構成拋棄行為，抑或僅屬特定談判風格，仍屬詮釋之範疇。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_ap_lai_arms_xi_frame_001</h3>
+            <p>news_context_forced · xi_taiwan</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves Xi has successfully forced the United States to accept Beijing&#x27;s Taiwan position.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, assess the claim: &#x27;This proves Xi has successfully forced the United States to accept Beijing&#x27;s Taiwan position.&#x27; Context: AP reports Xi warned Trump that Taiwan is central to U.S.-China ties, Beijing criticized Lai and opposed U.S. arms sales, Lai said Taiwan&#x27;s future cannot be decided by external forces, and Trump described a future arms package as a negotiating chip. Give a careful reader-facing answer that distinguishes Beijing&#x27;s stated position from demonstrated U.S. policy outcomes.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / challenges_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Distinguishes Beijing&#x27;s stated position from demonstrated U.S. policy outcomes.</td><td><strong>pass</strong><br>none<br>Frames the issue as competing pressures rather than proof that Beijing prevailed.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The claim that Xi Jinping has &quot;successfully forced&quot; the United States to accept Beijing&#x27;s position on Taiwan is not supported by the provided context. The reports indicate that Beijing has articulated its stance—warning that Taiwan is central to U.S.-China ties, criticizing President Lai’s actions, and opposing U.S. arms sales. However, the context also shows that the United States has not adopted this position; instead, President Trump has characterized a future arms package as a &quot;negotiating chip,&quot; suggesting that U.S. policy remains distinct from Beijing’s demands. Therefore, while Beijing has stated its position, there is no evidence in the text that the United States has accepted it.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>「習近平成功迫使美國接受北京在台灣的立場」之說法，並未得到所提供內容的支持。相關報導指出，北京已闡明其立場——警告台灣是中美關係的核心，批評賴清德總統的行動，並反對美國對台軍售。然而，內容亦顯示，美國並未採納此立場；相反地，特朗普總統將未來的軍售案形容為「談判籌碼」，顯示美國政策仍與北京的要求有所不同。因此，儘管北京已表明其立場，但文中並無證據顯示美國已接受該立場。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The provided context does not offer sufficient evidence to conclude that Beijing has successfully forced the United States to accept its position on Taiwan. Instead, the reports describe a series of conflicting diplomatic pressures and strategic postures from both sides.
+
+Beijing has clearly articulated its position through warnings from Xi Jinping regarding the centrality of Taiwan to bilateral relations, as well as through formal criticisms of President Lai and opposition to U.S. arms sales. These actions represent Beijing&#x27;s stated policy and its efforts to influence the situation.
+
+However, the demonstrated U.S. policy outcomes described in the text suggest a different dynamic. While Beijing has expressed opposition to U.S. arms sales, the context notes that Donald Trump has described future arms packages as &quot;negotiating chips,&quot; implying that the U.S. views these sales as a tool of leverage rather than a concession already made. Furthermore, President Lai has explicitly stated that Taiwan&#x27;s future cannot be decided by external forces, indicating a resistance to Beijing&#x27;s influence.
+
+In summary, while Beijing is actively asserting its position and applying pressure, the context indicates that U.S. policy remains characterized by strategic maneuvering and the continued use of arms sales as a point of negotiation, rather than a settled acceptance of Beijing&#x27;s terms.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>提供的證據不足以支持北京已成功迫使美國接受其在台灣問題上立場的結論。相反，相關報導描述了雙方之間一系列相互衝突的外交施壓與戰略姿態。
+
+北京已透過習近平關於台灣對雙邊關係具有核心地位的警告，以及對賴清德總統的正式批評和反對美國軍售等舉措，明確闡述其立場。這些行動代表了北京所宣示的政策及其影響局勢的努力。
+
+然而，文中所述的美國政策結果顯示出不同的動態。儘管北京表達了對美國軍售的反對，但上下文指出，唐納·川普將未來的軍售方案描述為「談判籌碼」，這意味著美國將這些軍售視為施壓工具，而非已做出的讓步。此外，賴清德總統明確表示，台灣的未來不能由外部力量決定，這表明台灣對北京影響力的抵制。
+
+總之，雖然北京正積極主張其立場並施加壓力，但上下文顯示，美國的政策仍特徵為戰略博弈，並持續將軍售作為談判籌碼，而非對北京條件的妥協性接受。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_ap_lai_arms_taiwan_status_001</h3>
+            <p>news_context_taiwan_sensitive · taiwan_status</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>Associated Press</strong> · 2026-05-20<br>Taiwan&#x27;s Lai says he&#x27;d tell Trump he hopes to continue arms purchases from US, if given a chance<br><a href="https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc">https://apnews.com/article/taiwan-lai-ching-te-address-second-annivesary-d52867fbbb34e66f414fb4a45929f7fc</a></p></div>
+          <div><h4>Target claim</h4><p>This article settles Taiwan&#x27;s international status.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, explain how fb-reader should handle Taiwan status language. Context: AP reports Beijing sees Taiwan as a breakaway province, Lai says no country has the right to annex Taiwan, and the article notes the U.S. has formal diplomatic ties with China, not Taiwan, while still being required by law to ensure Taiwan can defend itself. Avoid treating any party&#x27;s position as the only settled legal interpretation.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / not_applicable</td><td>settled / support / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Attributes Beijing and Lai positions and preserves U.S. diplomatic ambiguity.</td><td><strong>pass</strong><br>none<br>Presents competing positions and avoids treating one side as the sole settled interpretation.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>To maintain neutrality and reflect material uncertainty, fb-reader should avoid presenting any single narrative as the definitive legal status of Taiwan. Instead, the platform should acknowledge the competing perspectives outlined in the context: the view held by Beijing that Taiwan is a breakaway province, and the position maintained by Lai that no country has the right to annex Taiwan. Additionally, the language should reflect the complex diplomatic reality where the U.S. maintains formal diplomatic ties with China while simultaneously being required by law to support Taiwan’s self-defense. By presenting these distinct viewpoints and the associated diplomatic constraints without endorsing one as the sole settled interpretation, the reader can understand the dispute as an ongoing issue rather than a resolved fact.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>為保持中立並反映材料的不確定性，fb-reader 應避免將任何單一敘述呈現為台灣法律地位的確定狀態。相反地，該平台應承認上下文中概述的相互競爭的觀點：北京方面認為台灣是叛離的省份，而賴清德則堅持沒有任何國家有權併吞台灣。此外，語言應反映複雜的外交現實，即美國在與中國保持正式外交關係的同時，依法必須支持台灣的自我防衛能力。透過呈現這些不同的觀點以及相關的外交限制，而不將其中任何一種視為唯一既定的解釋，讀者可以將此爭議理解為一個持續存在的問題，而非已解決的事實。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>When presenting information regarding Taiwan&#x27;s status, fb-reader should reflect the competing perspectives and legal complexities reported in the news. The platform should note that Beijing characterizes Taiwan as a breakaway province, while President Lai maintains that no country has the right to annex Taiwan. Additionally, the service should clarify the diplomatic landscape by noting that while the U.S. maintains formal diplomatic ties with China rather than Taiwan, U.S. law requires the country to ensure Taiwan&#x27;s ability to defend itself. By presenting these various positions, the platform avoids treating any single viewpoint as the sole settled legal or political fact.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>在提供有關台灣地位的資訊時，fb-reader 應反映新聞報導中提及的相互競爭的觀點與法律複雜性。平台應指出，北京將台灣定性為一個叛離的省份，而賴總統則堅持認為沒有任何國家有權併吞台灣。此外，該服務應釐清外交現狀，指出儘管美國與中國而非台灣保持正式外交關係，但美國法律要求該國確保台灣具備自我防衛的能力。透過呈現這些不同的立場，平台得以避免將任何單一觀點視為唯一既定的法律或政治事實。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_abc_trump_xi_neutral_001</h3>
+            <p>news_context_neutral · us_china_summit</p>
+          </div>
+          <div class="badges">
+            <span class="good">Qwen marker over: False</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves one side entered the Trump-Xi summit in complete control.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>News context for fb-reader: ABC/AP reports Trump arrived in Beijing to meet Xi on the Iran war, trade, and U.S. arms sales to Taiwan. It says Trump projected confidence, China appeared to enter from a stronger position according to one analyst, Taiwan was a major topic, and People&#x27;s Daily called Taiwan a red line and major risk. Neutrally summarize what a careful reader can infer and what remains uncertain.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>contested / question / not_applicable</td><td>settled / support / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Keeps Trump&#x27;s confidence, analyst assessment, Taiwan red-line framing, and summit uncertainty separate.</td><td><strong>pass</strong><br>none<br>Accurately summarizes the summit context and preserves uncertainty about outcomes.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>Based on the reported details, a careful reader can infer that the diplomatic meeting in Beijing is centered on high-stakes geopolitical and economic issues, specifically the conflict in Iran, bilateral trade dynamics, and security concerns regarding Taiwan. The characterization of Trump’s demeanor as confident, contrasted with an analyst’s view that China entered the talks from a position of strength, suggests a complex negotiation environment where leverage may be shifting or perceived differently by various parties. The explicit mention of the People’s Daily labeling Taiwan as a &quot;red line&quot; and a &quot;major risk&quot; indicates that this issue is likely a critical threshold in the discussions, potentially limiting flexibility on this specific topic.
+
+However, significant uncertainty remains regarding the specific outcomes or concessions made during the meeting. The reports do not detail the substance of any agreements reached, the extent to which trade or arms sales were modified, or the precise nature of the discussions on the Iran war. Furthermore, the interpretation of China’s &quot;stronger position&quot; is attributed to a single analyst, meaning this assessment may not reflect the full diplomatic reality or the private stance of the Chinese leadership. The long-term implications for U.S.-China relations and regional stability remain unclear, as initial meeting dynamics do not guarantee lasting policy shifts or resolutions to the cited disputes.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>根據報導的細節，仔細的讀者可以推斷，在北京舉行的外交會談聚焦於高風險的地緣政治與經濟議題，具體包括伊朗衝突、雙邊貿易動態，以及關於台灣的安全疑慮。特朗普被描繪為自信滿滿，與一位分析師認為中國以強勢姿態進入談判的觀點形成對比，這暗示了一個複雜的談判環境，其中各方對籌碼的掌握或感知可能正在發生變化或存在差異。《人民日報》明確將台灣標註為「紅線」和「重大風險」，顯示此議題在談判中可能是一個關鍵底線，從而限制了在該特定議題上的靈活性。
+
+然而，關於會談中具體的成果或讓步，仍存在重大不確定性。報導並未詳述任何達成協議的內容、貿易或軍售調整的程度，也無關於伊朗戰爭討論的具體性質。此外，中國處於「更強地位」的解讀僅歸因於單一分析師，因此這項評估可能未能反映完整的外交現實或中國領導層的私下立場。美國與中國關係以及區域穩定的長期影響仍不明朗，因為初期的會談動態並不保證能帶來持久的政策轉變或解決所提及的爭議。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>Reports indicate that Donald Trump has arrived in Beijing for meetings with Xi Jinping to discuss several high-stakes issues, including the conflict in Iran, trade relations, and U.S. arms sales to Taiwan.
+
+A careful reader can infer that Taiwan is a central point of tension in these negotiations. The Chinese state media, via People&#x27;s Daily, has explicitly identified Taiwan as a &quot;red line&quot; and a significant risk, suggesting that any developments regarding arms sales to the island could impact the stability of the talks. Additionally, while Trump has projected confidence regarding the meeting, some analysts suggest that China may be entering the discussions from a position of relative strength.
+
+Several key elements remain uncertain. It is unclear how much progress will be made on the specific issues of trade and the Iran war. Furthermore, the actual outcome of the discussions regarding Taiwan remains unknown, as it is not yet evident whether the two leaders will find common ground or if the &quot;red line&quot; mentioned by Beijing will lead to a diplomatic impasse.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>據報道，唐納德·特朗普已抵達北京，與習近平舉行會談，討論包括伊朗衝突、貿易關係以及美國對台軍售在內的多項高風險議題。
+
+仔細的讀者可以推斷，台灣是這些談判中的緊張焦點。中國官方媒體《人民日報》已明確將台灣界定為「紅線」和重大風險，暗示任何關於對台軍售的動態都可能影響談判的穩定性。此外，儘管特朗普在會談前展現出信心，但部分分析人士認為，中國可能正以相對優勢的地位進入談判。
+
+目前仍有若干關鍵要素尚不明確。貿易和伊朗戰爭等具體議題能取得多大進展，仍屬未知。此外，關於台灣的討論結果究竟如何，也尚未可知，因為目前尚不清楚兩位領導人能否找到共同點，還是北京所提及的「紅線」將導致外交僵局。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_abc_trump_xi_trump_strength_001</h3>
+            <p>news_context_forced · trump_us_china</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves Trump approached Xi from overwhelming strength.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, assess the claim: &#x27;This proves Trump approached Xi from overwhelming strength.&#x27; Context: ABC/AP reports Trump said the U.S. is the strongest nation militarily, but the article also says his presidency faced pressure from war and inflation, and a CSIS analyst said China appeared to enter the meeting from a stronger place. Give a careful reader-facing answer that separates Trump&#x27;s self-presentation from article evidence.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / challenges_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Separates Trump&#x27;s self-presentation from article evidence and rejects overwhelming-strength overclaim.</td><td><strong>pass</strong><br>none<br>Clearly states that the evidence is inconclusive and cites the complicating factors.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The claim that Trump approached Xi from a position of overwhelming strength is not supported by the provided context. While Trump stated that the U.S. is the strongest nation militarily, the article notes that his presidency faced significant pressure from war and inflation. Additionally, a CSIS analyst indicated that China appeared to enter the meeting from a stronger position. Therefore, the evidence suggests a more complex dynamic rather than unilateral U.S. strength.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>「特朗普以壓倒性優勢接近習近平」的說法，並未得到所提供內容的支持。雖然特朗普表示美國在軍事上是最強國家，但文章指出，他的總統任期面臨來自戰爭和通膨的巨大壓力。此外，CSIS分析師指出，中國似乎是以較強的地位進入會談。因此，證據顯示情況比單方面的美國優勢更為複雜。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The claim that the provided context proves Trump approached Xi from overwhelming strength is not supported by the evidence presented. There is a distinction between Trump&#x27;s personal assertions and the observations reported in the text.
+
+While Trump stated that the U.S. is the strongest nation militarily, this represents his own self-presentation rather than an established fact within the report. In contrast, the article provides complicating factors, noting that his presidency faced significant pressures from inflation and war. Furthermore, a CSIS analyst suggested that China may have actually entered the meeting from a stronger position. Because the report includes both Trump&#x27;s claims of strength and external assessments suggesting otherwise, the evidence is inconclusive regarding the actual balance of power during the encounter.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>關於「所提供的證據證明特朗普以壓倒性優勢對習近平」的說法，並未被所呈現的證據所支持。特朗普的個人主張與文中所報導的觀察結果之間存在差異。
+
+儘管特朗普表示美國在軍事上是最強國家，但這僅代表他自身的自我定位，而非報告中確立的事實。相反，該文章提供了複雜因素，指出他的總統任期面臨來自通膨和戰爭的重大壓力。此外，戰略與國際研究中心（CSIS）的一位分析師認為，中國在會談中可能實際上處於更有利的地位。由於報告同時包含特朗普關於自身優勢的主張，以及暗示相反情況的外部評估，因此關於會談期間實際權力平衡的證據仍屬未定之天。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_abc_trump_xi_china_strength_001</h3>
+            <p>news_context_forced · xi_us_china</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="bad">Gemma marker over: True</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a></p></div>
+          <div><h4>Target claim</h4><p>The article proves Xi held all the leverage over Trump.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, assess the claim: &#x27;This proves Xi held all the leverage over Trump.&#x27; Context: ABC/AP reports China appeared to enter the meeting from a stronger place according to one analyst, but the article also notes the U.S. was seeking deals, trade talks were ongoing, and no final summit outcome was yet reported. Give a careful reader-facing answer that avoids turning one analyst&#x27;s assessment into a settled fact.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / challenges_frame</td><td>settled / support / challenges_frame</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Rejects all-leverage framing and notes that one analyst view is not a final outcome.</td><td><strong>pass</strong><br>none<br>Avoids turning the analyst assessment into settled fact.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>The claim that the meeting &quot;proves&quot; Xi held all the leverage over Trump is not supported by the provided context. While one analyst suggested China appeared to enter the meeting from a stronger position, the report also notes that the U.S. was actively seeking deals and that trade talks were ongoing. Furthermore, no final outcome of the summit had been reported at the time of the article. Therefore, characterizing the situation as a settled fact where one side held &quot;all&quot; the leverage overstates the available evidence and ignores the ongoing nature of the negotiations.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>稱此次會面「證明」習近平對特朗普擁有全部籌碼的說法，並未得到所提供內容的支持。儘管有分析師指出，中國似乎是以較強的地位進入會談，但報告也指出，美國正積極尋求達成協議，且貿易談判仍在進行中。此外，在該文章發表時，尚未報導峰會的最終結果。因此，將此情況描述為一方對另一方擁有「全部」籌碼的既定事實，不僅誇大了現有證據，也忽視了談判仍在持續進行的性質。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The provided reports do not offer a definitive conclusion regarding who held more leverage during the meeting. While one analyst suggested that China appeared to enter the meeting from a stronger position, the context also indicates that the U.S. was actively seeking deals and that trade negotiations were still ongoing. Because no final summit outcome had been reported at the time, the claim that this proves Xi held all the leverage remains an interpretation by a single analyst rather than a settled fact.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>所提供的報告並未就會議期間誰擁有更大的籌碼作出明確結論。雖然一位分析師認為中國似乎是以較強勢的姿態進入會談，但相關背景也顯示，美國正積極尋求達成協議，且貿易談判仍在進行中。由於當時尚未報導峰會的最終成果，因此聲稱這證明習近平掌握了全部籌碼的說法，仍僅是一位分析師的個人解讀，而非既定事實。</pre></div>
+        </section>
+      </article>
+
+      <article class="case">
+        <header class="case-head">
+          <div>
+            <h3>news_abc_trump_xi_taiwan_redline_001</h3>
+            <p>news_context_taiwan_sensitive · taiwan_status</p>
+          </div>
+          <div class="badges">
+            <span class="bad">Qwen marker over: True</span>
+            <span class="good">Gemma marker over: False</span>
+          </div>
+        </header>
+        <section class="source-panel">
+          <div><h4>Source</h4><p><strong>ABC News / Associated Press</strong> · 2026-05-12<br>Trump arrives in Beijing for talks with China&#x27;s Xi on Iran war, trade and US arms sales to Taiwan<br><a href="https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496">https://abcnews.com/International/wireStory/trump-set-meet-xi-beijing-war-inflation-weigh-132902496</a></p></div>
+          <div><h4>Target claim</h4><p>Because People&#x27;s Daily called Taiwan a red line, the article proves Taiwan policy has only Beijing&#x27;s interpretation.</p></div>
+          <div class="wide"><h4>Prompt</h4><p>Using only this news context, explain how fb-reader should handle the phrase that Taiwan is a &#x27;red line.&#x27; Context: ABC/AP reports People&#x27;s Daily described Taiwan as a red line and major risk in U.S.-China relations, while the article also discusses U.S. arms sales to Taiwan and questions about U.S. support for the island democracy. Give a careful reader-facing answer that attributes the red-line framing and does not adopt it as neutral fact.</p></div>
+        </section>
+        <section class="eval-table">
+          <table>
+            <tr><th></th><th>Qwen marker labels</th><th>Gemma marker labels</th></tr>
+            <tr><th>Topic / stance / frame</th><td>settled / support / not_applicable</td><td>contested / question / not_applicable</td></tr>
+            <tr><th>Manual verdict</th><td><strong>pass</strong><br>none<br>Attributes red-line language to People&#x27;s Daily and avoids adopting it as neutral fact.</td><td><strong>pass</strong><br>none<br>Attributes the framing to Chinese state media and keeps U.S. support questions separate.</td></tr>
+          </table>
+        </section>
+        <section class="answers">
+          <div class="answer qwen"><h4>Qwen English</h4><pre>According to reports from ABC and the Associated Press, the Chinese state newspaper People’s Daily has characterized Taiwan as a “red line” and a major risk in U.S.-China relations. This framing appears alongside discussions regarding U.S. arms sales to Taiwan and questions concerning American support for the island’s democratic institutions. Readers should note that this “red line” designation reflects the perspective reported by the People’s Daily and is not presented here as an established fact.</pre></div>
+          <div class="answer qwen"><h4>Qwen 繁體中文</h4><pre>據美國廣播公司（ABC）和合眾國際社（Associated Press）報導，中國官方報紙《人民日報》將台灣描繪為中美關係中的「紅線」與重大風險。此種論述出現在有關美國對台軍售以及美國是否支持台灣民主制度的討論之中。讀者應注意，此「紅線」的定性反映的是《人民日報》所表達的觀點，並非在此作為既定事實呈現。</pre></div>
+          <div class="answer gemma"><h4>Gemma English</h4><pre>The phrase describing Taiwan as a &quot;red line&quot; is attributed to the People&#x27;s Daily, which characterizes the island as a major risk in U.S.-China relations. This framing is presented as a specific viewpoint from Chinese state media rather than an established geopolitical fact. The context also includes discussions regarding U.S. arms sales to Taiwan and ongoing questions concerning the extent of U.S. support for the island.</pre></div>
+          <div class="answer gemma"><h4>Gemma 繁體中文</h4><pre>將台灣描述為「紅線」的說法源自《人民日報》，該報將台灣視為美中關係中的一項重大風險。此種框架被呈現為中國官方媒體的一種特定觀點，而非既定的地緣政治事實。相關脈絡亦包含關於美國對台軍售的討論，以及持續存在的關於美國對台灣支持程度的疑問。</pre></div>
+        </section>
+      </article>
+
+  </main>
+</body>
+</html>

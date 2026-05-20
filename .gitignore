@@ -10,6 +10,9 @@ group_vars/dgx.yml.vault.bak
 __pycache__/
 *.pyc
 
+# Runtime-only generated corpora and local caches.
+tmp/
+
 # Local-only overrides
 inventory.local.ini
 group_vars/local.yml

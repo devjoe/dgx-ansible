@@ -95,6 +95,9 @@ make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
 make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
 make fb-reader-ab-prhead-ipv4  # Qwen vs Gemma4 PR-head Tier B replay + stance-v2
+make fb-reader-ab-prhead-full-stance-ipv4  # same A/B with all 21 stance-v2 items
+make news-context-stance-ab-prhead-ipv4  # Trump/Xi current-news stance-v2 A/B
+make news-fulltext-stance-ab-prhead-ipv4  # runtime-fetched fulltext news stance A/B
 make gemma-mtp-endpoint-parity-prhead-ipv4  # PR-head chat vs raw completions parity
 make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
 make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun
