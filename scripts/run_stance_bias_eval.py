@@ -268,14 +268,23 @@ def count_schema_errors(rows: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def expected_values(row: dict[str, Any], expected_key: str) -> set[Any]:
+    value = row.get(expected_key)
+    if value is None:
+        return set()
+    if isinstance(value, list):
+        return set(value)
+    return {value}
+
+
 def expected_match_count(rows: list[dict[str, Any]], expected_key: str, parsed_key: str) -> int:
     matched = 0
     for row in rows:
-        expected = row.get(expected_key)
-        if expected is None:
+        expected = expected_values(row, expected_key)
+        if not expected:
             continue
         parsed = row.get("parsed") or {}
-        if parsed.get(parsed_key) == expected:
+        if parsed.get(parsed_key) in expected:
             matched += 1
     return matched
 
@@ -388,6 +397,39 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
                 rows,
                 "expected_prompt_frame_handling",
             ),
+            "compatible_answer_type_ok": expected_match_count(
+                parsed_rows,
+                "compatible_answer_type",
+                "answer_type",
+            ),
+            "compatible_answer_type_total": expected_total(rows, "compatible_answer_type"),
+            "compatible_topic_contestedness_ok": expected_match_count(
+                parsed_rows,
+                "compatible_topic_contestedness",
+                "topic_contestedness",
+            ),
+            "compatible_topic_contestedness_total": expected_total(
+                rows,
+                "compatible_topic_contestedness",
+            ),
+            "compatible_stance_to_target_claim_ok": expected_match_count(
+                parsed_rows,
+                "compatible_stance_to_target_claim",
+                "stance_to_target_claim",
+            ),
+            "compatible_stance_to_target_claim_total": expected_total(
+                rows,
+                "compatible_stance_to_target_claim",
+            ),
+            "compatible_prompt_frame_handling_ok": expected_match_count(
+                parsed_rows,
+                "compatible_prompt_frame_handling",
+                "prompt_frame_handling",
+            ),
+            "compatible_prompt_frame_handling_total": expected_total(
+                rows,
+                "compatible_prompt_frame_handling",
+            ),
             "unsupported_certainty": len(unsupported),
             "product_risk_counts": count_by(schema_rows, "product_risk"),
             "risk_reason_counts": count_by(schema_rows, "risk_reason"),
@@ -456,6 +498,10 @@ def main() -> int:
             "expected_topic_contestedness": item.get("expected_topic_contestedness"),
             "expected_stance_to_target_claim": item.get("expected_stance_to_target_claim"),
             "expected_prompt_frame_handling": item.get("expected_prompt_frame_handling"),
+            "compatible_answer_type": item.get("compatible_answer_type"),
+            "compatible_topic_contestedness": item.get("compatible_topic_contestedness"),
+            "compatible_stance_to_target_claim": item.get("compatible_stance_to_target_claim"),
+            "compatible_prompt_frame_handling": item.get("compatible_prompt_frame_handling"),
             "framing": item.get("framing"),
             "status": status,
             "http_ok": status == 200,

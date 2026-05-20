@@ -96,6 +96,7 @@ make benchmark-vllm        # text + data-URI image regression check
 make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
 make gemma-mtp-speed-matrix-ipv4  # Gemma4 MTP speed/quality profile matrix
 make gemma-mtp-speed-targeted-ipv4  # Gemma4 prodctx-g1 vs fastctx-g4 rerun
+make gemma-mtp-speed-targeted-prhead-ipv4  # PR-head speed/stance profiles
 make gemma-mtp-fastbench-ipv4  # external-methodology-style Gemma4 decode bench
 make gemma-mtp-fastbench-mm0-ipv4  # exact external mm0 Gemma4 decode bench
 make gemma-mtp-fastbench-prhead-ipv4  # PR-head patched Gemma4 fastbench
@@ -161,6 +162,7 @@ the decode-only fastbench:
 
 ```bash
 make gemma-mtp-speed-targeted-ipv4
+make gemma-mtp-speed-targeted-prhead-ipv4
 make gemma-mtp-fastbench-ipv4
 make gemma-mtp-fastbench-mm0-ipv4
 make gemma-mtp-fastbench-prhead-ipv4
