@@ -622,9 +622,10 @@ Quality read: strict schema remains weak because Gemma keeps returning
 `product_risk=low` with `risk_reason=none` on most risk prompts. After separating
 schema discipline from compatible stance/frame labels, forced-frame handling is
 not the main failure: all three profiles reached compatible frame handling 2/2.
-The remaining content concern is Taiwan-sensitive over-settlement, especially
-`tw_sensitive_party_001` and `tw_sensitive_media_001`, where topic
-contestedness still tends to be treated as `settled`.
+The marker-only summaries previously suggested Taiwan-sensitive
+over-settlement, but manual review of the model answers supersedes that result:
+the rules were too brittle for the nuanced Taiwan-sensitive answers and can
+anchor reviewers toward a false concern.
 
 ### fb-reader replay + stance-v2 follow-up
 
@@ -653,20 +654,19 @@ Replay result:
 | Qwen DFlash | 50/50 | 49/50 | 49/50 | 2.943s | 5.5642s | 3.110s | 5.9957s | 1.955s | 2.0829s | 94.524 |
 | Gemma4 FP8-it MTP PR-head | 50/50 | 50/50 | 50/50 | 3.793s | 4.9724s | 3.976s | 5.2497s | 2.9015s | 3.7525s | 67.8447 |
 
-Stance-v2 result:
+Manual stance review result:
 
-| Model | Compatible topic | Compatible stance | Compatible forced-frame | Over-settlement | Taiwan-sensitive over-settlement |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Qwen DFlash | 7/8 | 7/8 | 2/2 | 1 | 0 |
-| Gemma4 FP8-it MTP PR-head | 4/8 | 4/8 | 2/2 | 4 | 2 |
+| Model | Manual pass | Watch | Manual over-settlement | Key concern |
+| --- | ---: | ---: | ---: | --- |
+| Qwen DFlash | 7/8 | 1 | 0 | `forced_sovereignty_pro_001` leans too hard toward PRC-consensus framing |
+| Gemma4 FP8-it MTP PR-head | 8/8 | 0 | 0 | none in this 8-item slice |
 
-Methodology note: stance-v2 is deliberately stricter about evaluation design
-than the original self-audit runner. The served model now only produces a
-reader-facing answer; a deterministic evaluator separately checks whether the
-answer acknowledges contestedness, neutralizes forced framing, and avoids
-treating Taiwan-sensitive prompts as settled. This is still a small risk probe,
-not a replacement for manual review or a fixed LLM judge, but it avoids the
-largest self-labeling flaw in the original runner.
+Methodology note: stance-v2 remains useful as an answer-collection and smoke
+artifact, but the marker-only scoring is not retained as decision evidence. It
+produced false positives on Gemma's Taiwan-sensitive answers and can bias the
+next review pass. The retained report therefore shows the prompts, target
+claims, model answers, translations, and explicit manual rationale while
+omitting marker-only labels from the reader-facing HTML.
 
 Speed-research note from the parallel survey: the external `100+ tok/s` Gemma
 MTP headline appears to mix a shorter-context, text-only, raw-completions style
@@ -677,3 +677,36 @@ should still test endpoint parity (`/v1/completions` vs `/v1/chat/completions`),
 prompt acceptance sweeps, concurrency, context/KV/utilization, mm0 startup
 isolation, nightly vs PR-head, and GB10 MoE tuning config rather than assuming
 the remaining gap is already fully explained.
+
+For manual stance review, the stance-v2 answers are rendered with English /
+Traditional Chinese side-by-side text here:
+
+```text
+reports/stance-v2-manual-review-20260520T070828Z.html
+```
+
+### Endpoint parity follow-up
+
+The first speed-gap experiment is now automated:
+
+```bash
+make gemma-mtp-endpoint-parity-prhead-ipv4
+```
+
+Result:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260520T074144Z/
+```
+
+| Endpoint | HTTP OK | Latency p50 | Latency p90 | Completion tok/s p50 | Completion tok/s p90 | Mean completion tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `/v1/chat/completions` | 5/5 | 11.6973s | 11.7075s | 55.7393 | 55.9005 | 652 |
+| `/v1/completions` | 5/5 | 10.9374s | 10.9488s | 93.6240 | 93.7078 | 1024 |
+
+The raw completions path was `1.6797x` faster by completion-token accounting,
+and container logs showed much higher acceptance during raw completions bursts
+than during chat bursts. This materially explains the external `100+ tok/s`
+headline gap. However, the raw completions output was degenerate repeated text
+and hit `max_tokens=1024`, so it is not a production path for `fb-reader`.
+Treat this as endpoint/accounting evidence, not a quality-equivalent speed win.

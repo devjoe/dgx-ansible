@@ -14,6 +14,7 @@
     gemma_mtp_remote_dir: "{{ remote_workdir }}/gemma-mtp-speed"
     gemma_mtp_output_dir: "{{ remote_workdir }}/benchmarks/gemma-mtp-speed-{{ gemma_mtp_run_id }}"
     gemma_mtp_decode_runner: "{{ gemma_mtp_remote_dir }}/run_openai_decode_bench.py"
+    gemma_mtp_endpoint_runner: "{{ gemma_mtp_remote_dir }}/run_openai_endpoint_parity.py"
     gemma_mtp_stance_runner: "{{ gemma_mtp_remote_dir }}/run_stance_bias_eval.py"
     gemma_mtp_corpus: "{{ gemma_mtp_remote_dir }}/stance_bias_corpus.json"
     gemma_mtp_base_url: "http://localhost:{{ vllm_port }}"
@@ -83,6 +84,19 @@
         decode_repeats: 5
         decode_max_tokens: 2048
         decode_prompt: "Write a concise technical summary of speculative decoding for transformer language models."
+      - id: endpoint-parity-g4-u085
+        description: "Compare /v1/chat/completions vs /v1/completions under the external-style short context"
+        num_speculative_tokens: 4
+        max_model_len: 4096
+        max_num_batched_tokens: 4096
+        gpu_memory_utilization: "0.85"
+        run_stance: false
+        run_endpoint_parity: true
+        decode_repeats: 3
+        decode_max_tokens: 1024
+        endpoint_repeats: 5
+        endpoint_max_tokens: 1024
+        decode_prompt: "Write a concise technical summary of speculative decoding for transformer language models. Explain draft acceptance, rejected tokens, and why prompt type can change measured throughput."
   tasks:
     - name: Set stable matrix run id
       ansible.builtin.set_fact:
@@ -120,6 +134,12 @@
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../scripts/run_openai_decode_bench.py"
         dest: "{{ gemma_mtp_decode_runner }}"
+        mode: "0755"
+
+    - name: Copy endpoint parity runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_openai_endpoint_parity.py"
+        dest: "{{ gemma_mtp_endpoint_runner }}"
         mode: "0755"
 
     - name: Copy stance runner to DGX

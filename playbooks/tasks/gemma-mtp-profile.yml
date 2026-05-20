@@ -94,6 +94,48 @@
         mode: "0644"
       when: gemma_profile_metrics.status | default(0) == 200
 
+    - name: Run endpoint parity bench for {{ gemma_profile.id }}
+      ansible.builtin.command:
+        argv: "{{ [
+          '/usr/bin/python3',
+          gemma_mtp_endpoint_runner,
+          '--base-url',
+          gemma_mtp_base_url,
+          '--model',
+          gemma_mtp_served_name,
+          '--label',
+          gemma_profile.id,
+          '--output',
+          gemma_mtp_output_dir + '/' + gemma_profile.id + '-endpoint-parity.json',
+          '--repeats',
+          gemma_profile.endpoint_repeats | default(5) | string,
+          '--timeout',
+          gemma_mtp_timeout | string,
+          '--max-tokens',
+          gemma_profile.endpoint_max_tokens | default(gemma_profile.decode_max_tokens | default(gemma_mtp_decode_max_tokens)) | string
+        ] + (['--prompt', gemma_profile.decode_prompt] if gemma_profile.decode_prompt is defined else []) }}"
+      changed_when: true
+      when: gemma_profile.run_endpoint_parity | default(false) | bool
+
+    - name: Capture vLLM metrics after endpoint parity for {{ gemma_profile.id }}
+      ansible.builtin.uri:
+        url: "{{ gemma_mtp_base_url }}/metrics"
+        return_content: true
+        timeout: 10
+      register: gemma_profile_endpoint_metrics
+      failed_when: false
+      changed_when: false
+      when: gemma_profile.run_endpoint_parity | default(false) | bool
+
+    - name: Save post-endpoint-parity vLLM metrics for {{ gemma_profile.id }}
+      ansible.builtin.copy:
+        dest: "{{ gemma_mtp_output_dir }}/{{ gemma_profile.id }}-endpoint-metrics.prom"
+        content: "{{ gemma_profile_endpoint_metrics.content }}"
+        mode: "0644"
+      when:
+        - gemma_profile.run_endpoint_parity | default(false) | bool
+        - gemma_profile_endpoint_metrics.status | default(0) == 200
+
     - name: Run stance risk slice for {{ gemma_profile.id }}
       ansible.builtin.command:
         argv:

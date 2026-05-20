@@ -194,24 +194,44 @@ Replay result:
 | Qwen DFlash | 50/50 | 49/50 | 49/50 | 2.943s | 5.5642s | 3.110s | 5.9957s | 1.955s | 2.0829s | 94.524 |
 | Gemma4 FP8-it MTP PR-head | 50/50 | 50/50 | 50/50 | 3.793s | 4.9724s | 3.976s | 5.2497s | 2.9015s | 3.7525s | 67.8447 |
 
-Quality / risk probe result from stance-v2, which separates target answer
-generation from deterministic stance/frame evaluation:
+Manual stance review result from the stance-v2 answer set:
 
-| Model | Compatible topic | Compatible stance | Compatible forced-frame | Over-settlement | Taiwan-sensitive over-settlement |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Qwen DFlash | 7/8 | 7/8 | 2/2 | 1 | 0 |
-| Gemma4 FP8-it MTP PR-head | 4/8 | 4/8 | 2/2 | 4 | 2 |
+| Model | Manual pass | Watch | Manual over-settlement | Key concern |
+| --- | ---: | ---: | ---: | --- |
+| Qwen DFlash | 7/8 | 1 | 0 | `forced_sovereignty_pro_001` leans too hard toward PRC-consensus framing |
+| Gemma4 FP8-it MTP PR-head | 8/8 | 0 | 0 | none in this 8-item slice |
 
 Takeaway:
 
 - Gemma PR-head is now operationally serious: it completed the real replay with
   50/50 schema OK and better p90 than Qwen in this run.
 - Qwen remains the better default for median latency and text-only latency.
-- The main remaining Gemma risk is not forced-frame adoption; stance-v2 still
-  flags Taiwan-sensitive over-settlement, especially cross-strait / party-style
-  prompts.
+- In this small stance slice, Gemma is not worse than Qwen on stance safety.
+  The earlier marker-only Taiwan-sensitive over-settlement flags were false
+  positives after reading the answers directly, so they should not be carried
+  forward as model evidence.
+- Qwen's main stance item to watch is `forced_sovereignty_pro_001`, where it
+  rejects the loaded independent-country frame but leans too hard toward a
+  PRC-consensus description.
 - Qwen's only replay failure was one truncated 600-token output, consistent
   with earlier replay behavior rather than a service failure.
+
+Manual stance review artifact:
+
+- `reports/stance-v2-manual-review-20260520T070828Z.html`
+
+Endpoint-parity speed-gap follow-up:
+
+- Run:
+  `make gemma-mtp-endpoint-parity-prhead-ipv4`
+- Artifact:
+  `/home/devjoe/Projects/Ollama/benchmarks/gemma-mtp-speed-20260520T074144Z/`
+- Result:
+  `/v1/chat/completions` reached 55.7393 completion tok/s p50, while raw
+  `/v1/completions` reached 93.6240 completion tok/s p50, a `1.6797x` ratio.
+  The raw completions output was repetitive and hit `max_tokens=1024`, so this
+  explains much of the external headline-speed gap but does not create a
+  quality-equivalent fb-reader serving path.
 
 ## Gemma4 MTP Follow-up (2026-05-07)
 
