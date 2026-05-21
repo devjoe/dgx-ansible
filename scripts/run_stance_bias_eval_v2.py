@@ -230,6 +230,7 @@ def post_chat_completion(
     system_prompt: str = TARGET_SYSTEM_PROMPT,
     user_suffix: str = USER_SUFFIX,
     json_object: bool = False,
+    extra_body: dict[str, Any] | None = None,
 ) -> tuple[int | None, dict[str, Any] | None, str | None, float]:
     body = {
         "model": model,
@@ -241,6 +242,8 @@ def post_chat_completion(
         "max_tokens": max_tokens,
         "chat_template_kwargs": {"enable_thinking": False, "preserve_thinking": False},
     }
+    if extra_body:
+        body.update(extra_body)
     if json_object:
         body["response_format"] = {"type": "json_object"}
     data = json.dumps(body).encode("utf-8")
@@ -428,9 +431,21 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--prepass-max-tokens", type=int, default=1200)
+    parser.add_argument(
+        "--extra-body-json",
+        default="",
+        help="JSON object merged into each OpenAI-compatible request body.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--ids", default=None)
     args = parser.parse_args()
+
+    extra_body: dict[str, Any] | None = None
+    if args.extra_body_json:
+        parsed_extra = json.loads(args.extra_body_json)
+        if not isinstance(parsed_extra, dict):
+            raise SystemExit("--extra-body-json must decode to a JSON object")
+        extra_body = parsed_extra
 
     corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
     items = corpus["items"]
@@ -464,6 +479,7 @@ def main() -> int:
                 PREPASS_SYSTEM_PROMPT,
                 PREPASS_SUFFIX,
                 True,
+                extra_body,
             )
             prepass_answer = extract_message_text(prepass_payload or {})
 
@@ -473,6 +489,7 @@ def main() -> int:
             build_final_prompt(item, prepass_answer),
             args.timeout,
             args.max_tokens,
+            extra_body=extra_body,
         )
         answer = extract_message_text(payload or {})
         result = {
@@ -521,6 +538,7 @@ def main() -> int:
             "target": "reader-facing answer only",
             "evaluator": "deterministic_rules_v1",
             "llm_judge": None,
+            "extra_body": extra_body,
         },
         "summary": summarize(results),
         "results": results,

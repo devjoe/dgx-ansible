@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render DS4 dir-steering A/B artifacts into a readable HTML report."""
+"""Render DS4 dir-steering artifacts into a readable HTML report."""
 
 from __future__ import annotations
 
@@ -139,22 +139,25 @@ def render_answer(label: str, row: dict[str, Any], item: dict[str, Any]) -> str:
     """
 
 
-def render(corpus: dict[str, Any], qwen: dict[str, Any], gemma: dict[str, Any]) -> str:
+def render(corpus: dict[str, Any], qwen: dict[str, Any], gemma: dict[str, Any] | None) -> str:
     qwen_rows = result_by_id(qwen)
-    gemma_rows = result_by_id(gemma)
+    gemma_rows = result_by_id(gemma) if gemma else {}
     items = corpus.get("items", [])
     qwen_pairs = [(qwen_rows[item["id"]], item) for item in items if item["id"] in qwen_rows]
     gemma_pairs = [(gemma_rows[item["id"]], item) for item in items if item["id"] in gemma_rows]
     qwen_totals = count_metrics(qwen_pairs)
-    gemma_totals = count_metrics(gemma_pairs)
+    gemma_totals = count_metrics(gemma_pairs) if gemma else None
     contested_count = sum(1 for item in items if item.get("expected_topic_contestedness") == "contested")
     settled_count = sum(1 for item in items if item.get("expected_topic_contestedness") == "settled")
     rows = []
     for item in items:
         qrow = qwen_rows.get(item["id"])
         grow = gemma_rows.get(item["id"])
-        if not qrow or not grow:
+        if not qrow:
             continue
+        answer_blocks = [render_answer("Qwen DFlash", qrow, item)]
+        if grow:
+            answer_blocks.append(render_answer("Gemma4 FP8 MTP", grow, item))
         rows.append(
             f"""
             <article class="case">
@@ -164,19 +167,22 @@ def render(corpus: dict[str, Any], qwen: dict[str, Any], gemma: dict[str, Any]) 
                 <p>Expected / 預期：{esc(item.get('expected_topic_contestedness'))}</p>
               </header>
               <div class="answers">
-                {render_answer('Qwen DFlash', qrow, item)}
-                {render_answer('Gemma4 FP8 MTP', grow, item)}
+                {''.join(answer_blocks)}
               </div>
             </article>
             """,
         )
 
+    gemma_summary_row = ""
+    if gemma_totals is not None:
+        gemma_summary_row = f"""<tr><td>Gemma4 FP8 MTP</td><td>{esc(latency_summary(gemma or {}))}</td><td>{gemma_totals['contested_ack_ok']}/{contested_count}</td><td>{gemma_totals['main_positions_ok']}/{contested_count}</td><td>{gemma_totals['settled_direct_ok']}/{settled_count}</td><td>{gemma_totals['over_settlement']}</td><td>{gemma_totals['unnecessary_avoidance']}</td><td>{gemma_totals['tw_reader_wording_risk']}</td></tr>"""
+    report_mode = "A/B" if gemma else "Qwen no-op baseline"
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DS4 Dir-Steering A/B Report</title>
+  <title>DS4 Dir-Steering {esc(report_mode)} Report</title>
   <style>
     :root {{
       color-scheme: light;
@@ -221,8 +227,8 @@ def render(corpus: dict[str, Any], qwen: dict[str, Any], gemma: dict[str, Any]) 
 </head>
 <body>
 <main>
-  <h1>DS4 Dir-Steering A/B Report</h1>
-  <p>DS4 contested.txt + settled.txt calibration for Qwen DFlash and Gemma4 FP8 MTP. This report uses deterministic surface checks to triage 240 answers for manual reading.</p>
+  <h1>DS4 Dir-Steering {esc(report_mode)} Report</h1>
+  <p>DS4 contested.txt + settled.txt calibration. This report uses deterministic surface checks as triage hints only, so the answers remain visible for manual reading.</p>
 
   <h2>Metric Definitions / 欄位定義</h2>
   <table>
@@ -238,7 +244,7 @@ def render(corpus: dict[str, Any], qwen: dict[str, Any], gemma: dict[str, Any]) 
   <table>
     <tr><th>Model</th><th>Runtime</th><th>Contested ack</th><th>Main positions</th><th>Settled direct</th><th>Over-settlement</th><th>Avoidance</th><th>TW wording risk</th></tr>
     <tr><td>Qwen DFlash</td><td>{esc(latency_summary(qwen))}</td><td>{qwen_totals['contested_ack_ok']}/{contested_count}</td><td>{qwen_totals['main_positions_ok']}/{contested_count}</td><td>{qwen_totals['settled_direct_ok']}/{settled_count}</td><td>{qwen_totals['over_settlement']}</td><td>{qwen_totals['unnecessary_avoidance']}</td><td>{qwen_totals['tw_reader_wording_risk']}</td></tr>
-    <tr><td>Gemma4 FP8 MTP</td><td>{esc(latency_summary(gemma))}</td><td>{gemma_totals['contested_ack_ok']}/{contested_count}</td><td>{gemma_totals['main_positions_ok']}/{contested_count}</td><td>{gemma_totals['settled_direct_ok']}/{settled_count}</td><td>{gemma_totals['over_settlement']}</td><td>{gemma_totals['unnecessary_avoidance']}</td><td>{gemma_totals['tw_reader_wording_risk']}</td></tr>
+    {gemma_summary_row}
   </table>
 
   <h2>Cases / 個別題目</h2>
@@ -253,11 +259,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus", required=True, type=Path)
     parser.add_argument("--qwen", required=True, type=Path)
-    parser.add_argument("--gemma", required=True, type=Path)
+    parser.add_argument("--gemma", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
-    html_doc = render(load_json(args.corpus), load_json(args.qwen), load_json(args.gemma))
+    html_doc = render(
+        load_json(args.corpus),
+        load_json(args.qwen),
+        load_json(args.gemma) if args.gemma else None,
+    )
     html_doc = "\n".join(line.rstrip() for line in html_doc.splitlines()) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_doc, encoding="utf-8")

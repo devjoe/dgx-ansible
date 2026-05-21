@@ -1,0 +1,42 @@
+{
+  "label": "noop-dflash",
+  "model": "qwen3.6-35b",
+  "created_at_unix": 1779339234,
+  "prompt": "Write a neutral, structured Traditional Chinese analysis of how a reader should evaluate a contentious Taiwan social-media post. Cover factual claims, value judgments, framing, missing context, and uncertainty. Use clear section labels and enough detail to produce a long answer.",
+  "max_tokens": 700,
+  "repeats": 2,
+  "extra_body": null,
+  "summary": {
+    "n": 2,
+    "http_ok": 2,
+    "latency_p50_s": 8.9497,
+    "latency_p90_s": 9.1027,
+    "tokens_per_s_p50": 78.2506,
+    "tokens_per_s_p90": 79.5876,
+    "completion_tokens_mean": 700.0
+  },
+  "results": [
+    {
+      "index": 0,
+      "status": 200,
+      "http_ok": true,
+      "latency_s": 9.1409,
+      "completion_tokens": 700,
+      "tokens_per_s": 76.5793,
+      "output_chars": 3043,
+      "output_preview": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Topic:** How a reader should evaluate a contentious Taiwan social-media post\n   - **Tone/Style:** Neutral, structured, Traditional Chinese\n   - **Key Elements to Cover:** Factual claims, value judgments, framing, missing context, uncertainty\n   - **Format:** Clear section labels, detailed/long answer\n   - **Language:** Traditional Chinese\n\n2.  **Identify Core Requirements & Constraints:**\n   - Must be neutral (objective, analytical, ",
+      "error": null
+    },
+    {
+      "index": 1,
+      "status": 200,
+      "http_ok": true,
+      "latency_s": 8.7586,
+      "completion_tokens": 700,
+      "tokens_per_s": 79.9218,
+      "output_chars": 2968,
+      "output_preview": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Topic:** How a reader should evaluate a contentious Taiwan social-media post\n   - **Tone/Style:** Neutral, structured, Traditional Chinese\n   - **Key Elements to Cover:** Factual claims, value judgments, framing, missing context, uncertainty\n   - **Format:** Clear section labels, detailed/long answer\n   - **Language:** Traditional Chinese\n\n2.  **Identify Core Requirements & Constraints:**\n   - Must be neutral (objective, analytical, ",
+      "error": null
+    }
+  ]
+}

@@ -62,6 +62,7 @@ def post_chat_completion(
     prompt: str,
     timeout: float,
     max_tokens: int,
+    extra_body: dict[str, Any] | None = None,
 ) -> tuple[int | None, dict[str, Any] | None, str | None, float]:
     url = base_url.rstrip("/") + "/v1/chat/completions"
     body = {
@@ -70,6 +71,8 @@ def post_chat_completion(
         "temperature": 0,
         "max_tokens": max_tokens,
     }
+    if extra_body:
+        body.update(extra_body)
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -99,10 +102,21 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=240)
     parser.add_argument("--max-tokens", type=int, default=700)
+    parser.add_argument(
+        "--extra-body-json",
+        default="",
+        help="JSON object merged into each OpenAI-compatible request body.",
+    )
     args = parser.parse_args()
 
     if args.repeats < 1:
         raise SystemExit("--repeats must be >= 1")
+    extra_body: dict[str, Any] | None = None
+    if args.extra_body_json:
+        parsed_extra = json.loads(args.extra_body_json)
+        if not isinstance(parsed_extra, dict):
+            raise SystemExit("--extra-body-json must decode to a JSON object")
+        extra_body = parsed_extra
 
     results: list[dict[str, Any]] = []
     for idx in range(args.repeats):
@@ -112,6 +126,7 @@ def main() -> int:
             args.prompt,
             args.timeout,
             args.max_tokens,
+            extra_body,
         )
         text = extract_message_text(payload or {})
         tokens = completion_tokens(payload or {})
@@ -140,6 +155,7 @@ def main() -> int:
         "prompt": args.prompt,
         "max_tokens": args.max_tokens,
         "repeats": args.repeats,
+        "extra_body": extra_body,
         "summary": {
             "n": len(results),
             "http_ok": len(ok_rows),

@@ -91,6 +91,7 @@ def run_one(
     prompt: str,
     max_tokens: int,
     timeout: float,
+    extra_body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if endpoint == "chat":
         url = f"{base_url.rstrip('/')}/v1/chat/completions"
@@ -111,6 +112,8 @@ def run_one(
         }
     else:
         raise ValueError(endpoint)
+    if extra_body:
+        body.update(extra_body)
     status, payload, error, elapsed = post_json(url, body, timeout)
     text = message_text(payload or {})
     tokens = completion_tokens(payload or {})
@@ -162,7 +165,18 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--timeout", type=float, default=240)
     parser.add_argument("--max-tokens", type=int, default=1024)
+    parser.add_argument(
+        "--extra-body-json",
+        default="",
+        help="JSON object merged into each OpenAI-compatible request body.",
+    )
     args = parser.parse_args()
+    extra_body: dict[str, Any] | None = None
+    if args.extra_body_json:
+        parsed_extra = json.loads(args.extra_body_json)
+        if not isinstance(parsed_extra, dict):
+            raise SystemExit("--extra-body-json must decode to a JSON object")
+        extra_body = parsed_extra
 
     rows: list[dict[str, Any]] = []
     for idx in range(args.repeats):
@@ -174,6 +188,7 @@ def main() -> int:
                 args.prompt,
                 args.max_tokens,
                 args.timeout,
+                extra_body,
             )
             row["index"] = idx
             rows.append(row)
@@ -190,6 +205,7 @@ def main() -> int:
         "prompt": args.prompt,
         "max_tokens": args.max_tokens,
         "repeats": args.repeats,
+        "extra_body": extra_body,
         "created_at_unix": int(time.time()),
         "summary": summarize(rows),
         "results": rows,

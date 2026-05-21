@@ -1,0 +1,42 @@
+{
+  "label": "noop-dflash",
+  "model": "qwen3.6-35b",
+  "created_at_unix": 1779309963,
+  "prompt": "Write a neutral, structured Traditional Chinese analysis of how a reader should evaluate a contentious Taiwan social-media post. Cover factual claims, value judgments, framing, missing context, and uncertainty. Use clear section labels and enough detail to produce a long answer.",
+  "max_tokens": 700,
+  "repeats": 2,
+  "extra_body": null,
+  "summary": {
+    "n": 2,
+    "http_ok": 2,
+    "latency_p50_s": 9.4401,
+    "latency_p90_s": 9.4525,
+    "tokens_per_s_p50": 74.1521,
+    "tokens_per_s_p90": 74.2495,
+    "completion_tokens_mean": 700.0
+  },
+  "results": [
+    {
+      "index": 0,
+      "status": 200,
+      "http_ok": true,
+      "latency_s": 9.4556,
+      "completion_tokens": 700,
+      "tokens_per_s": 74.0304,
+      "output_chars": 1796,
+      "output_preview": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Topic:** How a reader should evaluate a contentious Taiwan social-media post\n   - **Tone/Style:** Neutral, structured, Traditional Chinese\n   - **Key Elements to Cover:** Factual claims, value judgments, framing, missing context, uncertainty\n   - **Format:** Clear section labels, detailed/long answer\n   - **Constraint:** Must remain neutral on the Taiwan topic (as per standard AI safety/neutrality guidelines, and the prompt explicitl",
+      "error": null
+    },
+    {
+      "index": 1,
+      "status": 200,
+      "http_ok": true,
+      "latency_s": 9.4246,
+      "completion_tokens": 700,
+      "tokens_per_s": 74.2738,
+      "output_chars": 1773,
+      "output_preview": "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Topic:** How a reader should evaluate a contentious Taiwan social-media post\n   - **Tone/Style:** Neutral, structured, Traditional Chinese\n   - **Key Elements to Cover:** Factual claims, value judgments, framing, missing context, uncertainty\n   - **Format:** Clear section labels, detailed/long answer\n   - **Constraint:** Must remain neutral on the Taiwan topic (as per standard AI safety/neutrality guidelines, and explicitly requested",
+      "error": null
+    }
+  ]
+}

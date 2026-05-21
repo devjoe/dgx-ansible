@@ -1,0 +1,184 @@
+---
+# Run Qwen dir-steering experiment profiles against the DS4 contested/settled
+# calibration corpus. This playbook is intentionally isolated from `site.yml`:
+# it stops the Ansible-managed vLLM service, starts an experiment Qwen server
+# from the existing venv, runs profile checks, and restores the service in
+# `always`.
+
+- name: Run Qwen dir-steering DS4 calibration profiles on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    qwen_dir_steering_run_id: "{{ qwen_dir_steering_run_id_fixed }}"
+    qwen_dir_steering_remote_dir: "{{ remote_workdir }}/qwen-dir-steering"
+    qwen_dir_steering_output_dir: "{{ remote_workdir }}/benchmarks/qwen-dir-steering-{{ qwen_dir_steering_run_id }}"
+    qwen_dir_steering_local_output_dir: "{{ playbook_dir }}/../reports/qwen-dir-steering-{{ qwen_dir_steering_run_id }}"
+    qwen_dir_steering_decode_runner: "{{ qwen_dir_steering_remote_dir }}/run_openai_decode_bench.py"
+    qwen_dir_steering_stance_runner: "{{ qwen_dir_steering_remote_dir }}/run_stance_bias_eval_v2.py"
+    qwen_dir_steering_corpus_src: "{{ playbook_dir }}/../tmp/ds4-dir-steering-corpus.json"
+    qwen_dir_steering_corpus: "{{ qwen_dir_steering_remote_dir }}/ds4-dir-steering-corpus.json"
+    qwen_dir_steering_base_url: "http://localhost:{{ vllm_port }}"
+    qwen_dir_steering_timeout: 240
+    qwen_dir_steering_decode_repeats: 2
+    qwen_dir_steering_decode_max_tokens: 700
+    qwen_dir_steering_stance_max_tokens: 700
+    qwen_dir_steering_limit: ""
+    qwen_dir_steering_profile_ids: ""
+    qwen_dir_steering_extra_env: {}
+
+    qwen_dir_steering_profiles:
+      - id: noop-dflash
+        description: "Control profile: same Qwen DFlash launch path, no activation hook"
+        extra_args: ""
+        extra_body_json: ""
+        run_decode: true
+        run_ds4: true
+  tasks:
+    - name: Set stable Qwen dir-steering run id
+      ansible.builtin.set_fact:
+        qwen_dir_steering_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Select requested Qwen dir-steering profiles
+      ansible.builtin.set_fact:
+        qwen_dir_steering_selected_profile_ids: "{{ qwen_dir_steering_profile_ids.split(',') | map('trim') | reject('equalto', '') | list }}"
+        qwen_dir_steering_selected_profiles: >-
+          {{
+            qwen_dir_steering_profiles
+            if (qwen_dir_steering_profile_ids | length == 0)
+            else (qwen_dir_steering_profiles | selectattr('id', 'in', qwen_dir_steering_profile_ids.split(',') | map('trim') | reject('equalto', '') | list) | list)
+          }}
+
+    - name: Verify requested Qwen dir-steering profiles exist
+      ansible.builtin.assert:
+        that:
+          - qwen_dir_steering_selected_profiles | length > 0
+          - qwen_dir_steering_selected_profiles | length == qwen_dir_steering_selected_profile_ids | length or qwen_dir_steering_selected_profile_ids | length == 0
+        fail_msg: "Unknown or empty qwen_dir_steering_profile_ids={{ qwen_dir_steering_profile_ids }}"
+
+    - name: Ensure remote Qwen dir-steering dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ qwen_dir_steering_remote_dir }}"
+        - "{{ qwen_dir_steering_output_dir }}"
+
+    - name: Ensure local Qwen dir-steering output dir exists
+      ansible.builtin.file:
+        path: "{{ qwen_dir_steering_local_output_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Copy decode runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_openai_decode_bench.py"
+        dest: "{{ qwen_dir_steering_decode_runner }}"
+        mode: "0755"
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ qwen_dir_steering_stance_runner }}"
+        mode: "0755"
+
+    - name: Copy DS4 dir-steering corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ qwen_dir_steering_corpus_src }}"
+        dest: "{{ qwen_dir_steering_corpus }}"
+        mode: "0644"
+
+    - name: Write Qwen dir-steering manifest
+      ansible.builtin.copy:
+        dest: "{{ qwen_dir_steering_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': qwen_dir_steering_run_id,
+          'model': vllm_model,
+          'served_name': vllm_served_name,
+          'corpus_src': qwen_dir_steering_corpus_src,
+          'profiles': qwen_dir_steering_selected_profiles,
+          'limit': qwen_dir_steering_limit,
+          'decode_repeats': qwen_dir_steering_decode_repeats,
+          'decode_max_tokens': qwen_dir_steering_decode_max_tokens,
+          'stance_max_tokens': qwen_dir_steering_stance_max_tokens,
+          'note': 'noop-dflash is a control profile; true DS4-style activation steering requires a future vLLM/Qwen model hook.'
+        } | to_nice_json }}"
+
+    - name: Run Qwen dir-steering profiles and restore Qwen afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before dir-steering profiles
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Run Qwen dir-steering profile matrix
+          ansible.builtin.include_tasks: tasks/qwen-dir-steering-profile.yml
+          loop: "{{ qwen_dir_steering_selected_profiles }}"
+          loop_control:
+            loop_var: qwen_profile
+            label: "{{ qwen_profile.id }}"
+      always:
+        - name: Stop Qwen dir-steering experiment server if present
+          ansible.builtin.shell: |
+            set -euo pipefail
+            pid_file="{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file" 2>/dev/null || true)"
+              if [[ "$pid" =~ ^[0-9]+$ ]]; then
+                kill -TERM -- "-$pid" 2>/dev/null || true
+                kill -TERM "$pid" 2>/dev/null || true
+                sleep 2
+                kill -KILL -- "-$pid" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+              fi
+              rm -f "$pid_file"
+            fi
+          args:
+            executable: /bin/bash
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ qwen_dir_steering_base_url }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Find Qwen dir-steering artifacts
+      ansible.builtin.find:
+        paths: "{{ qwen_dir_steering_output_dir }}"
+        file_type: file
+      register: qwen_dir_steering_artifacts
+
+    - name: Fetch Qwen dir-steering artifacts
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ qwen_dir_steering_local_output_dir }}/"
+        flat: true
+      loop: "{{ qwen_dir_steering_artifacts.files }}"
+      failed_when: false
+
+    - name: Show Qwen dir-steering output directory
+      ansible.builtin.debug:
+        msg: "Qwen dir-steering outputs: {{ qwen_dir_steering_local_output_dir }}"

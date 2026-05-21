@@ -1,0 +1,162 @@
+---
+- name: Run Qwen dir-steering profile {{ qwen_profile.id }}
+  block:
+    - name: Stop previous Qwen dir-steering experiment server if present
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pid_file="{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+        if [ -f "$pid_file" ]; then
+          pid="$(cat "$pid_file" 2>/dev/null || true)"
+          if [[ "$pid" =~ ^[0-9]+$ ]]; then
+            kill -TERM -- "-$pid" 2>/dev/null || true
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL -- "-$pid" 2>/dev/null || true
+            kill -KILL "$pid" 2>/dev/null || true
+          fi
+          rm -f "$pid_file"
+        fi
+      args:
+        executable: /bin/bash
+      become: true
+      failed_when: false
+      changed_when: true
+
+    - name: Launch Qwen dir-steering experiment server {{ qwen_profile.id }}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        setsid env \
+          HF_HUB_ENABLE_HF_TRANSFER=1 \
+          HF_HUB_OFFLINE={{ (vllm_hf_hub_offline | default(true)) | ternary('1','0') }} \
+          VLLM_MARLIN_USE_ATOMIC_ADD={{ (vllm_marlin_use_atomic_add | default(true)) | ternary('1','0') }} \
+          VLLM_LOGGING_LEVEL=INFO \
+          {% for key, value in qwen_dir_steering_extra_env.items() -%}
+          {{ key }}='{{ value }}' \
+          {% endfor -%}
+          {{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
+            --host {{ vllm_host }} \
+            --port {{ vllm_port }} \
+            --served-model-name {{ vllm_served_name }} \
+            {% if vllm_language_model_only %}--language-model-only{% else %}--limit-mm-per-prompt '{"image":{{ vllm_max_images_per_prompt }}}'{% endif %} \
+            --max-model-len {{ qwen_profile.max_model_len | default(vllm_max_model_len) }} \
+            --max-num-batched-tokens {{ qwen_profile.max_num_batched_tokens | default(vllm_max_num_batched_tokens) }} \
+            --max-num-seqs {{ qwen_profile.max_num_seqs | default(vllm_max_num_seqs) }} \
+            --gpu-memory-utilization {{ qwen_profile.gpu_memory_utilization | default(vllm_gpu_memory_utilization) }} \
+            --load-format {{ vllm_load_format | default('fastsafetensors') }} \
+            --attention-backend {{ vllm_attention_backend | default('flash_attn') }} \
+            --enable-prefix-caching \
+            --enable-chunked-prefill \
+            --trust-remote-code \
+            {% if (vllm_quantization | default('')) | length > 0 %}--quantization {{ vllm_quantization }}{% endif %} \
+            --reasoning-parser {{ vllm_reasoning_parser | default('qwen3') }} \
+            --enable-auto-tool-choice \
+            --tool-call-parser {{ vllm_tool_call_parser | default('qwen3_coder') }} \
+            --default-chat-template-kwargs '{{ vllm_default_chat_template_kwargs | default("{\"preserve_thinking\":true}") }}' \
+            {% if (vllm_kv_cache_dtype | default('')) | length > 0 %}--kv-cache-dtype {{ vllm_kv_cache_dtype }}{% endif %} \
+            {% if (vllm_dtype | default('')) | length > 0 %}--dtype {{ vllm_dtype }}{% endif %} \
+            {% if (qwen_profile.extra_args | default('')) | length > 0 %}{{ qwen_profile.extra_args }}{% endif %} \
+            {% if (vllm_speculative_config | default('')) | length > 0 %}--speculative-config '{{ vllm_speculative_config }}'{% endif %} \
+            > "{{ qwen_dir_steering_output_dir }}/{{ qwen_profile.id }}-server.log" 2>&1 &
+        echo $! > "{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+      args:
+        executable: /bin/bash
+      become: true
+      become_user: "{{ vllm_user }}"
+      changed_when: true
+
+    - name: Wait for Qwen dir-steering profile API {{ qwen_profile.id }}
+      ansible.builtin.uri:
+        url: "{{ qwen_dir_steering_base_url }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_profile_models
+      retries: 180
+      delay: 5
+      until: qwen_profile_models.status == 200
+
+    - name: Run decode speed bench for {{ qwen_profile.id }}
+      ansible.builtin.command:
+        argv: "{{ [
+          '/usr/bin/python3',
+          qwen_dir_steering_decode_runner,
+          '--base-url',
+          qwen_dir_steering_base_url,
+          '--model',
+          vllm_served_name,
+          '--label',
+          qwen_profile.id,
+          '--output',
+          qwen_dir_steering_output_dir + '/' + qwen_profile.id + '-decode.json',
+          '--repeats',
+          qwen_profile.decode_repeats | default(qwen_dir_steering_decode_repeats) | string,
+          '--timeout',
+          qwen_dir_steering_timeout | string,
+          '--max-tokens',
+          qwen_profile.decode_max_tokens | default(qwen_dir_steering_decode_max_tokens) | string
+        ] + (['--extra-body-json', qwen_profile.extra_body_json] if (qwen_profile.extra_body_json | default('')) | length > 0 else []) }}"
+      changed_when: true
+      when: qwen_profile.run_decode | default(true) | bool
+
+    - name: Capture vLLM metrics for {{ qwen_profile.id }}
+      ansible.builtin.uri:
+        url: "{{ qwen_dir_steering_base_url }}/metrics"
+        return_content: true
+        timeout: 10
+      register: qwen_profile_metrics
+      failed_when: false
+      changed_when: false
+
+    - name: Save vLLM metrics for {{ qwen_profile.id }}
+      ansible.builtin.copy:
+        dest: "{{ qwen_dir_steering_output_dir }}/{{ qwen_profile.id }}-metrics.prom"
+        content: "{{ qwen_profile_metrics.content }}"
+        mode: "0644"
+      when: qwen_profile_metrics.status | default(0) == 200
+
+    - name: Run DS4 contested/settled corpus for {{ qwen_profile.id }}
+      ansible.builtin.command:
+        argv: "{{ [
+          '/usr/bin/python3',
+          qwen_dir_steering_stance_runner,
+          '--base-url',
+          qwen_dir_steering_base_url,
+          '--model',
+          vllm_served_name,
+          '--label',
+          qwen_profile.id,
+          '--corpus',
+          qwen_dir_steering_corpus,
+          '--output',
+          qwen_dir_steering_output_dir + '/' + qwen_profile.id + '-ds4.json',
+          '--timeout',
+          qwen_dir_steering_timeout | string,
+          '--max-tokens',
+          qwen_dir_steering_stance_max_tokens | string
+        ] + (['--limit', qwen_dir_steering_limit | string] if qwen_dir_steering_limit | string | length > 0 else []) + (['--extra-body-json', qwen_profile.extra_body_json] if (qwen_profile.extra_body_json | default('')) | length > 0 else []) }}"
+      changed_when: true
+      when: qwen_profile.run_ds4 | default(true) | bool
+  rescue:
+    - name: Fail Qwen dir-steering profile with log path
+      ansible.builtin.fail:
+        msg: "Qwen dir-steering profile {{ qwen_profile.id }} failed. Log: {{ qwen_dir_steering_output_dir }}/{{ qwen_profile.id }}-server.log"
+  always:
+    - name: Stop Qwen dir-steering experiment server for {{ qwen_profile.id }}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        pid_file="{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+        if [ -f "$pid_file" ]; then
+          pid="$(cat "$pid_file" 2>/dev/null || true)"
+          if [[ "$pid" =~ ^[0-9]+$ ]]; then
+            kill -TERM -- "-$pid" 2>/dev/null || true
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 2
+            kill -KILL -- "-$pid" 2>/dev/null || true
+            kill -KILL "$pid" 2>/dev/null || true
+          fi
+          rm -f "$pid_file"
+        fi
+      args:
+        executable: /bin/bash
+      become: true
+      failed_when: false
+      changed_when: true

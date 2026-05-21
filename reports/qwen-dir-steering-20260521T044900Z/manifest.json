@@ -1,0 +1,21 @@
+{
+    "corpus_src": "/Users/devjoe/Projects/dgx-ansible/tmp/ds4-dir-steering-corpus.json",
+    "decode_max_tokens": 700,
+    "decode_repeats": 2,
+    "limit": "",
+    "model": "Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound",
+    "note": "noop-dflash is a control profile; true DS4-style activation steering requires a future vLLM/Qwen model hook.",
+    "profiles": [
+        {
+            "description": "Control profile: same Qwen DFlash launch path, no activation hook",
+            "extra_args": "",
+            "extra_body_json": "",
+            "id": "noop-dflash",
+            "run_decode": true,
+            "run_ds4": true
+        }
+    ],
+    "run_id": "20260521T044900Z",
+    "served_name": "qwen3.6-35b",
+    "stance_max_tokens": 700
+}
