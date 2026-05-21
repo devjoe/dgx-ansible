@@ -54,6 +54,77 @@
           QWEN_STEERING_METHOD: "signed_projection"
         run_decode: true
         run_ds4: true
+      - id: steer-l34-s005-ablate
+        description: "Experiment hook: signed-projection ablation on layer 34, scale 0.05"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '34', 'QWEN_STEERING_SCALE': '0.05'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l34-s010-ablate
+        description: "Experiment hook: signed-projection ablation on layer 34, scale 0.10"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '34', 'QWEN_STEERING_SCALE': '0.10'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l34-s020-ablate
+        description: "Experiment hook: signed-projection ablation on layer 34, scale 0.20"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '34', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l32-35-s010-ablate
+        description: "Experiment hook: signed-projection ablation on layers 32-35, scale 0.10"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.10'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l32-35-s020-ablate
+        description: "Experiment hook: signed-projection ablation on layers 32-35, scale 0.20"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l36-39-s005-ablate
+        description: "Experiment hook: signed-projection ablation on layers 36-39, scale 0.05"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '36,37,38,39', 'QWEN_STEERING_SCALE': '0.05'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l36-39-s010-ablate
+        description: "Experiment hook: signed-projection ablation on layers 36-39, scale 0.10"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '36,37,38,39', 'QWEN_STEERING_SCALE': '0.10'}) }}"
+        run_decode: true
+        run_ds4: true
+      - id: steer-l36-39-s020-ablate
+        description: "Experiment hook: signed-projection ablation on layers 36-39, scale 0.20"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '36,37,38,39', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        run_decode: true
+        run_ds4: true
+    qwen_dir_steering_base_hook_env:
+      PYTHONPATH: "{{ qwen_dir_steering_remote_dir }}"
+      QWEN_STEERING_ENABLED: "1"
+      QWEN_STEERING_DIRECTIONS: "{{ qwen_dir_steering_directions_path }}"
+      QWEN_STEERING_SIGN: "1"
+      QWEN_STEERING_MODE: "both"
+      QWEN_STEERING_METHOD: "signed_projection"
   tasks:
     - name: Set stable Qwen dir-steering run id
       ansible.builtin.set_fact:

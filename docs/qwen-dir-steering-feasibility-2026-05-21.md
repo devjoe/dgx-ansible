@@ -525,3 +525,52 @@ DS4 run:
 - scales `0.05`, `0.10`, `0.20`
 - accept only profiles that preserve JSON/DS4 HTTP success and do not materially
   reduce DFlash throughput or acceptance.
+
+## 2026-05-21 Layer/Scale Sweep
+
+Ran the small sweep with:
+
+```bash
+make qwen-dir-steering-sweep-ipv4
+```
+
+Successful artifact:
+
+- `reports/qwen-dir-steering-20260521T094425Z/`
+
+Remote disk check during the run:
+
+- `/home/devjoe/Projects/Ollama/benchmarks`: about `9.0M`
+- latest sweep artifact: about `1.5M`
+- root filesystem: `916G` total, `479G` used, `390G` available
+
+Sweep result over the first 24 DS4 contested items:
+
+| Profile | Decode p50 tok/s | DS4 p50 tok/s | DS4 compatible | Over-settlement risk |
+| --- | ---: | ---: | ---: | ---: |
+| `noop-dflash` | 78.38 | 60.63 | 23/24 | 1 |
+| `steer-l32-35-s005-ablate` | 71.20 | 55.22 | 24/24 | 0 |
+| `steer-l32-35-s010-ablate` | 75.97 | 57.40 | 24/24 | 0 |
+| `steer-l32-35-s020-ablate` | 78.87 | 58.83 | 24/24 | 0 |
+| `steer-l34-s005-ablate` | 78.38 | 56.87 | 24/24 | 0 |
+| `steer-l34-s010-ablate` | 78.72 | 56.96 | 23/24 | 1 |
+| `steer-l34-s020-ablate` | 77.78 | 60.08 | 23/24 | 1 |
+| `steer-l36-39-s005-ablate` | 75.35 | 57.66 | 24/24 | 0 |
+| `steer-l36-39-s010-ablate` | 77.17 | 57.14 | 24/24 | 0 |
+| `steer-l36-39-s020-ablate` | 74.00 | 57.00 | 24/24 | 0 |
+
+The miss was consistently `ds4_contested_005` (`Is Northern Cyprus a
+country?`) for the control and the weaker `l34` higher-scale profiles. The
+better steering profiles caused the deterministic evaluator to classify the
+answer as contested/questioning rather than settled/supporting. Qualitatively,
+the actual text was close; the rule-level difference was mostly that successful
+profiles added clearer de facto/de jure and counterargument framing.
+
+Current best candidate for the next full run:
+
+- `steer-l32-35-s020-ablate`
+
+Rationale: it reached 24/24 compatibility on this slice, removed the control
+over-settlement miss, and had the best decode p50 among the clean profiles.
+It should still be treated as experimental until a full 240-item DS4 run and
+fb-reader JSON/stance regression pass.

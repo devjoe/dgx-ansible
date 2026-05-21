@@ -24,6 +24,8 @@ DS4_DIR_STEERING_CORPUS ?= tmp/ds4-dir-steering-corpus.json
 DS4_DIR_STEERING_LIMIT ?=
 QWEN_DIR_STEERING_LIMIT ?=
 QWEN_DIR_STEERING_PROFILE_IDS ?=
+QWEN_DIR_STEERING_SWEEP_PROFILE_IDS ?= noop-dflash,steer-l34-s005-ablate,steer-l34-s010-ablate,steer-l34-s020-ablate,steer-l32-35-s005-ablate,steer-l32-35-s010-ablate,steer-l32-35-s020-ablate,steer-l36-39-s005-ablate,steer-l36-39-s010-ablate,steer-l36-39-s020-ablate
+QWEN_DIR_STEERING_SWEEP_LIMIT ?= 24
 QWEN_DIR_STEERING_DIRECTIONS ?= /home/devjoe/Projects/Ollama/benchmarks/qwen-dir-steering-extract-20260521T071702Z/directions.pt
 QWEN_DIR_STEERING_EXTRACT_CORPUS ?= tmp/qwen-dir-steering-extraction-corpus.json
 QWEN_DIR_STEERING_EXTRACT_MANUAL ?= reports/qwen-dir-steering-20260521T044900Z/noop-dflash-manual-review.json
@@ -38,7 +40,7 @@ GEMMA_MTP_PRHEAD_STANCE_PROFILES ?= prodctx-g1-u055,prodctx-g4-u055,fastctx-g4-u
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-sweep qwen-dir-steering-sweep-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -143,6 +145,12 @@ qwen-dir-steering-hook-smoke:  ## Smoke-test experiment Qwen activation hook aga
 
 qwen-dir-steering-hook-smoke-ipv4:  ## Smoke-test Qwen activation hook through direct IPv4
 	$(MAKE) qwen-dir-steering-hook-smoke INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+qwen-dir-steering-sweep:  ## Run Qwen activation hook layer/scale sweep
+	$(MAKE) qwen-dir-steering-ds4 QWEN_DIR_STEERING_LIMIT=$(QWEN_DIR_STEERING_SWEEP_LIMIT) QWEN_DIR_STEERING_PROFILE_IDS=$(QWEN_DIR_STEERING_SWEEP_PROFILE_IDS)
+
+qwen-dir-steering-sweep-ipv4:  ## Run Qwen activation hook layer/scale sweep through direct IPv4
+	$(MAKE) qwen-dir-steering-sweep INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 qwen-dir-steering-extraction-corpus:  ## Build Qwen dir-steering extraction corpus from manual DS4 review
 	python3 scripts/build_qwen_dir_steering_extraction_corpus.py --manual-review "$(QWEN_DIR_STEERING_EXTRACT_MANUAL)" --output "$(QWEN_DIR_STEERING_EXTRACT_CORPUS)"

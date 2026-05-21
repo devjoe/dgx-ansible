@@ -76,7 +76,6 @@ class QwenSteeringState:
         self.directions = {
             int(layer): tensor.detach().float().cpu()
             for layer, tensor in raw_directions.items()
-            if int(layer) in self.layers
         }
         self.scale = float(os.environ.get("QWEN_STEERING_SCALE", "0.05"))
         self.sign = float(os.environ.get("QWEN_STEERING_SIGN", "1.0"))
