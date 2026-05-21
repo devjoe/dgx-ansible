@@ -1,0 +1,166 @@
+---
+# Offline Qwen direction extraction. This does not alter the vLLM serving code:
+# it stops the service to free GB10 memory, runs a one-shot transformers capture
+# from the existing vLLM venv, fetches diagnostics, and restores vLLM in always.
+
+- name: Extract Qwen dir-steering hidden-state diagnostics on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    qwen_dir_steering_extract_run_id: "{{ qwen_dir_steering_extract_run_id_fixed }}"
+    qwen_dir_steering_extract_remote_dir: "{{ remote_workdir }}/qwen-dir-steering-extract"
+    qwen_dir_steering_extract_remote_output_dir: "{{ remote_workdir }}/benchmarks/qwen-dir-steering-extract-{{ qwen_dir_steering_extract_run_id }}"
+    qwen_dir_steering_extract_local_output_dir: "{{ playbook_dir }}/../reports/qwen-dir-steering-extract-{{ qwen_dir_steering_extract_run_id }}"
+    qwen_dir_steering_extract_corpus_src: "{{ playbook_dir }}/../tmp/qwen-dir-steering-extraction-corpus.json"
+    qwen_dir_steering_extract_corpus: "{{ qwen_dir_steering_extract_remote_dir }}/qwen-dir-steering-extraction-corpus.json"
+    qwen_dir_steering_extract_runner: "{{ qwen_dir_steering_extract_remote_dir }}/capture_qwen_hidden_directions.py"
+    qwen_dir_steering_extract_model: "{{ vllm_model }}"
+    qwen_dir_steering_extract_layers: "0,10,20,30,40"
+    qwen_dir_steering_extract_max_items: "4"
+    qwen_dir_steering_extract_max_length: "512"
+    qwen_dir_steering_extract_torch_dtype: "auto"
+    qwen_dir_steering_extract_device_map: ""
+    qwen_dir_steering_extract_device: "cuda"
+    qwen_dir_steering_extract_local_files_only: true
+    qwen_dir_steering_extract_timeout: 3600
+    qwen_dir_steering_extract_install_deps: true
+    qwen_dir_steering_extract_pip_packages:
+      - "auto-round>=0.5"
+      - "accelerate>=0.30"
+  tasks:
+    - name: Set stable Qwen extraction run id
+      ansible.builtin.set_fact:
+        qwen_dir_steering_extract_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure Qwen extraction dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ qwen_dir_steering_extract_remote_dir }}"
+        - "{{ qwen_dir_steering_extract_remote_output_dir }}"
+
+    - name: Ensure local Qwen extraction output dir exists
+      ansible.builtin.file:
+        path: "{{ qwen_dir_steering_extract_local_output_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Copy Qwen extraction corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ qwen_dir_steering_extract_corpus_src }}"
+        dest: "{{ qwen_dir_steering_extract_corpus }}"
+        mode: "0644"
+
+    - name: Copy hidden-state capture runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/capture_qwen_hidden_directions.py"
+        dest: "{{ qwen_dir_steering_extract_runner }}"
+        mode: "0755"
+
+    - name: Write Qwen extraction manifest
+      ansible.builtin.copy:
+        dest: "{{ qwen_dir_steering_extract_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': qwen_dir_steering_extract_run_id,
+          'model': qwen_dir_steering_extract_model,
+          'corpus_src': qwen_dir_steering_extract_corpus_src,
+          'layers': qwen_dir_steering_extract_layers,
+          'max_items': qwen_dir_steering_extract_max_items,
+          'max_length': qwen_dir_steering_extract_max_length,
+          'torch_dtype': qwen_dir_steering_extract_torch_dtype,
+          'device_map': qwen_dir_steering_extract_device_map,
+          'device': qwen_dir_steering_extract_device,
+          'local_files_only': qwen_dir_steering_extract_local_files_only,
+          'install_deps': qwen_dir_steering_extract_install_deps,
+          'pip_packages': qwen_dir_steering_extract_pip_packages,
+          'note': 'Offline hidden-state diagnostics only; production vLLM code is restored afterwards.'
+        } | to_nice_json }}"
+
+    - name: Ensure Qwen extraction Python dependencies are installed
+      ansible.builtin.pip:
+        name: "{{ qwen_dir_steering_extract_pip_packages }}"
+        virtualenv: "{{ vllm_workdir }}/.venv"
+      when: qwen_dir_steering_extract_install_deps | bool
+
+    - name: Run Qwen extraction and restore service afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before extraction
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Run Qwen hidden-state extraction
+          ansible.builtin.command:
+            argv: "{{ [
+              vllm_workdir + '/.venv/bin/python',
+              qwen_dir_steering_extract_runner,
+              '--corpus',
+              qwen_dir_steering_extract_corpus,
+              '--model',
+              qwen_dir_steering_extract_model,
+              '--output-dir',
+              qwen_dir_steering_extract_remote_output_dir,
+              '--layers',
+              qwen_dir_steering_extract_layers,
+              '--max-length',
+              qwen_dir_steering_extract_max_length | string,
+              '--device',
+              qwen_dir_steering_extract_device,
+              '--torch-dtype',
+              qwen_dir_steering_extract_torch_dtype,
+              '--trust-remote-code'
+            ] + (['--device-map', qwen_dir_steering_extract_device_map] if qwen_dir_steering_extract_device_map | string | length > 0 else []) + (['--max-items', qwen_dir_steering_extract_max_items | string] if qwen_dir_steering_extract_max_items | string | length > 0 else []) + (['--local-files-only'] if qwen_dir_steering_extract_local_files_only | bool else []) }}"
+          environment:
+            HF_HUB_OFFLINE: "{{ qwen_dir_steering_extract_local_files_only | ternary('1', '0') }}"
+            HF_HUB_ENABLE_HF_TRANSFER: "1"
+          become: true
+          become_user: "{{ vllm_user }}"
+          async: "{{ qwen_dir_steering_extract_timeout }}"
+          poll: 30
+          changed_when: true
+      always:
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "http://localhost:{{ vllm_port }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Find Qwen extraction artifacts
+      ansible.builtin.find:
+        paths: "{{ qwen_dir_steering_extract_remote_output_dir }}"
+        file_type: file
+      register: qwen_dir_steering_extract_artifacts
+
+    - name: Fetch Qwen extraction artifacts except tensor file
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ qwen_dir_steering_extract_local_output_dir }}/"
+        flat: true
+      loop: "{{ qwen_dir_steering_extract_artifacts.files }}"
+      when: item.path | basename != "directions.pt"
+
+    - name: Show Qwen extraction output directory
+      ansible.builtin.debug:
+        msg: "Qwen extraction outputs: {{ qwen_dir_steering_extract_local_output_dir }}"

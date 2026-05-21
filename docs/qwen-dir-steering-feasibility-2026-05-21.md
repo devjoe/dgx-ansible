@@ -299,27 +299,160 @@ Watch-list candidates:
 - `ds4_settled_113`: da Vinci / Mona Lisa, minor certainty caveat.
 - `ds4_settled_119`: Tokyo as Japan's capital, legalistic caveat over-weighted.
 
-## Recommended Next Experiment Order
+## Completed Experiment Order
 
-1. Build a Qwen-specific vector extraction script using the DS4 contested set:
-   contrast `settled` vs `contested`, plus Taiwan-sensitive forced-framing
-   examples.
-2. Use the 13 manual extraction-negative settled-control answers above as the
-   first negative set for reducing over-contested settled answers.
-3. Prototype a vLLM plugin or temporary patched model class that can apply one
-   global steering vector set at server start.
-4. Sweep layer groups and scales:
-   - early/mid/late layers
-   - FFN output vs attention output vs GatedDeltaNet output
-   - prefill-only, decode-only, and both
-5. Re-run:
-   - DS4 120 contested/settled probes
-   - stance-v2 full corpus
-   - 10-news full-text set with manual-read HTML
-   - decode speed bench
-   - DFlash acceptance metrics
-6. Reject any steering profile that improves one stance metric while damaging
-   JSON stability, CIB-sensitive discrimination, or Qwen DFlash acceptance.
+1. Ran offline Qwen hidden-state extraction smoke:
+
+   ```bash
+   make qwen-dir-steering-extract-ipv4
+   ```
+
+   This selected 4 balanced items and layers `0,10,20,30,40` to prove model
+   load, hidden-state capture, vector serialization, artifact fetch, and vLLM
+   restore.
+2. Ran the full first-pass extraction:
+
+   ```bash
+   make qwen-dir-steering-extract-ipv4 \
+     QWEN_DIR_STEERING_EXTRACT_MAX_ITEMS= \
+     QWEN_DIR_STEERING_EXTRACT_LAYERS=all
+   ```
+
+3. Used the 13 manual extraction-negative settled-control answers as the first
+   negative set for reducing over-contested settled answers, contrasted against
+   the 120 contested-pass examples.
+
+## Next Experiment Order
+
+1. Prototype an experiment-only vLLM/Qwen model hook that loads `directions.pt`
+   from the DGX extraction output directory and applies a global steering
+   profile at server start.
+2. Keep the first hook deliberately narrow:
+   - no request-level switching;
+   - no production service mutation;
+   - no attempt to solve per-topic policy yet;
+   - explicit layer list, sign, scale, and prefill/decode mode in the profile.
+3. Start with these layer groups from the extraction diagnostics:
+   - `{9}` as an early-layer probe;
+   - `{24,28,29}` as a mid/late transition probe;
+   - `{32,33,34,35}` as the strongest first late-middle band;
+   - `{36,37,38,39}` as a late band;
+   - optionally `{40}` as a raw-norm control, not the default.
+4. Sweep sign and scale before interpreting quality:
+   - signs: `+direction`, `-direction`;
+   - scales: small ladder such as `0.05`, `0.10`, `0.20`, `0.40`;
+   - intervention timing: prefill-only first, then decode-only, then both.
+5. For each hook profile, run a short safety gate before any full run:
+   - 4-item DS4 smoke;
+   - decode bench;
+   - `status-vllm-ipv4` restore check;
+   - DFlash acceptance check from server logs/metrics.
+6. Promote only promising profiles to full evaluation:
+   - DS4 240 contested/settled probes;
+   - stance-v2 full corpus;
+   - 10-news full-text manual-read HTML;
+   - JSON/schema stability;
+   - latency and DFlash acceptance.
+7. Reject any steering profile that improves over-contested settled answers
+   while damaging contested-question caution, Taiwan/CIB sensitivity, JSON
+   stability, or DFlash acceptance.
+
+## 2026-05-21 Extraction Scaffold
+
+Implemented first-pass offline extraction tooling:
+
+- `scripts/build_qwen_dir_steering_extraction_corpus.py`
+  - Reads the manual DS4 review JSON.
+  - Emits `tmp/qwen-dir-steering-extraction-corpus.json`.
+  - Corpus shape: 120 contested-positive prompts plus 13 manual
+    extraction-negative settled-control prompts.
+- `scripts/capture_qwen_hidden_directions.py`
+  - Loads the current Qwen model through Transformers.
+  - Applies the same fb-reader target system/user prompt wrapper.
+  - Captures last-token hidden states for selected layers.
+  - Writes `summary.json` diagnostics and `directions.pt` tensors.
+  - Direction sign is `negative_mean - positive_mean`; later steering must
+    sweep sign and scale.
+- `playbooks/qwen-dir-steering-extract.yml`
+  - Stops `vllm.service` only to free memory.
+  - Runs the extraction from the existing `{{ vllm_workdir }}/.venv`.
+  - Installs the extra Transformers-side loading dependencies
+    `auto-round>=0.5` and `accelerate>=0.30` by default. The current vLLM
+    service can run without them, but Transformers needs them to load the
+    AutoRound checkpoint for hidden-state capture.
+  - Always restores `vllm.service` and waits for `/v1/models`.
+  - Fetches diagnostics but intentionally does not fetch the tensor file by
+    default.
+- `make qwen-dir-steering-extract-ipv4`
+  - Direct IPv4 entrypoint for the extraction smoke.
+
+This remains an offline diagnostic path. It does not patch vLLM and does not
+serve any steered model.
+
+### Extraction run results
+
+Smoke:
+
+```text
+reports/qwen-dir-steering-extract-20260521T071010Z/
+```
+
+- Command: `make qwen-dir-steering-extract-ipv4`
+- Selected items: 4 balanced examples.
+- Selected layers: `0,10,20,30,40`.
+- Result: succeeded after installing `auto-round>=0.5` and `accelerate>=0.30`
+  into the vLLM venv.
+- Runtime: 214.7s.
+- Model config observed through Transformers: `num_hidden_layers=40`,
+  `hidden_size=2048`.
+- Post-run `make status-vllm-ipv4` reported `active` and `qwen3.6-35b`.
+
+Full first-pass extraction:
+
+```text
+reports/qwen-dir-steering-extract-20260521T071702Z/
+```
+
+- Command:
+  `make qwen-dir-steering-extract-ipv4 QWEN_DIR_STEERING_EXTRACT_MAX_ITEMS= QWEN_DIR_STEERING_EXTRACT_LAYERS=all QWEN_DIR_STEERING_EXTRACT_INSTALL_DEPS=false`
+- Items: 120 contested-positive prompts and 13 manual extraction-negative
+  settled-control prompts.
+- Layers: all embedding/hidden layers `0..40`.
+- Runtime: 314.149s.
+- Post-run `make status-vllm-ipv4` reported `active` and `qwen3.6-35b`.
+- Fetched artifacts: `manifest.json` and `summary.json`. The tensor file
+  `directions.pt` remains on the DGX output directory by design.
+
+Top full-run layers by projection separation:
+
+| Layer | direction_norm | projection_separation_z | mean_cosine |
+| ---: | ---: | ---: | ---: |
+| 34 | 1.561420 | 1.293579 | 0.994408 |
+| 32 | 1.602207 | 1.285911 | 0.994685 |
+| 33 | 1.581201 | 1.278050 | 0.994535 |
+| 39 | 1.678249 | 1.268748 | 0.997710 |
+| 38 | 1.668366 | 1.268417 | 0.996413 |
+| 35 | 1.547048 | 1.258836 | 0.994476 |
+| 37 | 1.671036 | 1.231719 | 0.995516 |
+| 28 | 1.567575 | 1.227467 | 0.995529 |
+| 9 | 0.138292 | 1.223279 | 0.999631 |
+| 36 | 1.674940 | 1.213767 | 0.994486 |
+| 29 | 1.546475 | 1.210773 | 0.995009 |
+| 24 | 1.414393 | 1.200480 | 0.994301 |
+
+Initial interpretation:
+
+- The strongest diagnostic separation is concentrated in late-middle to late
+  layers, especially `32..39`.
+- Layer `40` has the largest raw direction norm but weaker separation than the
+  `32..39` band, so it should not be the only first hook target.
+- Layer `9` shows notable separation despite a very small direction norm; it is
+  worth keeping as an early-layer probe because Qwen/GatedDeltaNet steering
+  reports warned that late decode-only interventions may miss prefill-time
+  commitments.
+- The next hook sweep should start with layer groups `{9}`, `{24,28,29}`,
+  `{32,33,34,35}`, and `{36,37,38,39}`, testing sign and scale rather than
+  assuming the `negative_mean - positive_mean` sign is directly usable.
 
 ## Current Decision
 

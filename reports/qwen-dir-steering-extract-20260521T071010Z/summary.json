@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "model": "Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound",
+  "created_at_unix": 1779347646,
+  "elapsed_s": 214.7,
+  "num_hidden_layers": 40,
+  "hidden_size": 2048,
+  "layers": [
+    0,
+    10,
+    20,
+    30,
+    40
+  ],
+  "counts": {
+    "contested_positive": 2,
+    "over_contested_settled_negative": 2
+  },
+  "max_length": 512,
+  "max_items": 4,
+  "device_map": "",
+  "device": "cuda",
+  "direction_path": "/home/devjoe/Projects/Ollama/benchmarks/qwen-dir-steering-extract-20260521T071010Z/directions.pt",
+  "top_layers_by_direction_norm": [
+    {
+      "layer": 40,
+      "positive_mean_norm": 105.363121,
+      "negative_mean_norm": 103.372589,
+      "direction_norm": 33.173382,
+      "mean_cosine": 0.949663,
+      "positive_projection_mean": -757.983948,
+      "negative_projection_mean": 342.489716,
+      "projection_separation_z": 2.045791
+    },
+    {
+      "layer": 30,
+      "positive_mean_norm": 15.167665,
+      "negative_mean_norm": 15.154124,
+      "direction_norm": 4.404774,
+      "mean_cosine": 0.957795,
+      "positive_projection_mean": -9.906331,
+      "negative_projection_mean": 9.495713,
+      "projection_separation_z": 1.976915
+    },
+    {
+      "layer": 20,
+      "positive_mean_norm": 11.51361,
+      "negative_mean_norm": 11.824004,
+      "direction_norm": 2.536726,
+      "mean_cosine": 0.97672,
+      "positive_projection_mean": 0.404409,
+      "negative_projection_mean": 6.839395,
+      "projection_separation_z": 2.998802
+    },
+    {
+      "layer": 10,
+      "positive_mean_norm": 5.2967,
+      "negative_mean_norm": 5.317474,
+      "direction_norm": 0.31884,
+      "mean_cosine": 0.998204,
+      "positive_projection_mean": 0.059426,
+      "negative_projection_mean": 0.161085,
+      "projection_separation_z": 7.033954
+    },
+    {
+      "layer": 0,
+      "positive_mean_norm": 0.323888,
+      "negative_mean_norm": 0.323888,
+      "direction_norm": 0.0,
+      "mean_cosine": 1.0,
+      "positive_projection_mean": 0.0,
+      "negative_projection_mean": 0.0,
+      "projection_separation_z": 0.0
+    }
+  ],
+  "top_layers_by_projection_separation": [
+    {
+      "layer": 10,
+      "positive_mean_norm": 5.2967,
+      "negative_mean_norm": 5.317474,
+      "direction_norm": 0.31884,
+      "mean_cosine": 0.998204,
+      "positive_projection_mean": 0.059426,
+      "negative_projection_mean": 0.161085,
+      "projection_separation_z": 7.033954
+    },
+    {
+      "layer": 20,
+      "positive_mean_norm": 11.51361,
+      "negative_mean_norm": 11.824004,
+      "direction_norm": 2.536726,
+      "mean_cosine": 0.97672,
+      "positive_projection_mean": 0.404409,
+      "negative_projection_mean": 6.839395,
+      "projection_separation_z": 2.998802
+    },
+    {
+      "layer": 40,
+      "positive_mean_norm": 105.363121,
+      "negative_mean_norm": 103.372589,
+      "direction_norm": 33.173382,
+      "mean_cosine": 0.949663,
+      "positive_projection_mean": -757.983948,
+      "negative_projection_mean": 342.489716,
+      "projection_separation_z": 2.045791
+    },
+    {
+      "layer": 30,
+      "positive_mean_norm": 15.167665,
+      "negative_mean_norm": 15.154124,
+      "direction_norm": 4.404774,
+      "mean_cosine": 0.957795,
+      "positive_projection_mean": -9.906331,
+      "negative_projection_mean": 9.495713,
+      "projection_separation_z": 1.976915
+    },
+    {
+      "layer": 0,
+      "positive_mean_norm": 0.323888,
+      "negative_mean_norm": 0.323888,
+      "direction_norm": 0.0,
+      "mean_cosine": 1.0,
+      "positive_projection_mean": 0.0,
+      "negative_projection_mean": 0.0,
+      "projection_separation_z": 0.0
+    }
+  ],
+  "layers_summary": [
+    {
+      "layer": 0,
+      "positive_mean_norm": 0.323888,
+      "negative_mean_norm": 0.323888,
+      "direction_norm": 0.0,
+      "mean_cosine": 1.0,
+      "positive_projection_mean": 0.0,
+      "negative_projection_mean": 0.0,
+      "projection_separation_z": 0.0
+    },
+    {
+      "layer": 10,
+      "positive_mean_norm": 5.2967,
+      "negative_mean_norm": 5.317474,
+      "direction_norm": 0.31884,
+      "mean_cosine": 0.998204,
+      "positive_projection_mean": 0.059426,
+      "negative_projection_mean": 0.161085,
+      "projection_separation_z": 7.033954
+    },
+    {
+      "layer": 20,
+      "positive_mean_norm": 11.51361,
+      "negative_mean_norm": 11.824004,
+      "direction_norm": 2.536726,
+      "mean_cosine": 0.97672,
+      "positive_projection_mean": 0.404409,
+      "negative_projection_mean": 6.839395,
+      "projection_separation_z": 2.998802
+    },
+    {
+      "layer": 30,
+      "positive_mean_norm": 15.167665,
+      "negative_mean_norm": 15.154124,
+      "direction_norm": 4.404774,
+      "mean_cosine": 0.957795,
+      "positive_projection_mean": -9.906331,
+      "negative_projection_mean": 9.495713,
+      "projection_separation_z": 1.976915
+    },
+    {
+      "layer": 40,
+      "positive_mean_norm": 105.363121,
+      "negative_mean_norm": 103.372589,
+      "direction_norm": 33.173382,
+      "mean_cosine": 0.949663,
+      "positive_projection_mean": -757.983948,
+      "negative_projection_mean": 342.489716,
+      "projection_separation_z": 2.045791
+    }
+  ],
+  "items": [
+    {
+      "id": "ds4_contested_001",
+      "group": "contested_positive",
+      "tokens": 98,
+      "truncated": false
+    },
+    {
+      "id": "ds4_contested_002",
+      "group": "contested_positive",
+      "tokens": 106,
+      "truncated": false
+    },
+    {
+      "id": "ds4_settled_053",
+      "group": "over_contested_settled_negative",
+      "tokens": 100,
+      "truncated": false
+    },
+    {
+      "id": "ds4_settled_055",
+      "group": "over_contested_settled_negative",
+      "tokens": 101,
+      "truncated": false
+    }
+  ]
+}
