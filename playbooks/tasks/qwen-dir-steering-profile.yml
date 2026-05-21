@@ -33,7 +33,10 @@
           {% for key, value in qwen_dir_steering_extra_env.items() -%}
           {{ key }}='{{ value }}' \
           {% endfor -%}
-          {{ vllm_workdir }}/.venv/bin/vllm serve {{ vllm_model }} \
+          {% for key, value in (qwen_profile.extra_env | default({})).items() -%}
+          {{ key }}='{{ value }}' \
+          {% endfor -%}
+          {{ qwen_profile.launcher_prefix | default(vllm_workdir ~ '/.venv/bin/vllm') }} serve {{ vllm_model }} \
             --host {{ vllm_host }} \
             --port {{ vllm_port }} \
             --served-model-name {{ vllm_served_name }} \

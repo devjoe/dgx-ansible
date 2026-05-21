@@ -16,8 +16,11 @@
     qwen_dir_steering_local_output_dir: "{{ playbook_dir }}/../reports/qwen-dir-steering-{{ qwen_dir_steering_run_id }}"
     qwen_dir_steering_decode_runner: "{{ qwen_dir_steering_remote_dir }}/run_openai_decode_bench.py"
     qwen_dir_steering_stance_runner: "{{ qwen_dir_steering_remote_dir }}/run_stance_bias_eval_v2.py"
+    qwen_dir_steering_plugin: "{{ qwen_dir_steering_remote_dir }}/qwen_dir_steering_vllm_plugin.py"
+    qwen_dir_steering_launcher: "{{ qwen_dir_steering_remote_dir }}/launch_vllm_with_qwen_steering.py"
     qwen_dir_steering_corpus_src: "{{ playbook_dir }}/../tmp/ds4-dir-steering-corpus.json"
     qwen_dir_steering_corpus: "{{ qwen_dir_steering_remote_dir }}/ds4-dir-steering-corpus.json"
+    qwen_dir_steering_directions_path: "{{ remote_workdir }}/benchmarks/qwen-dir-steering-extract-20260521T071702Z/directions.pt"
     qwen_dir_steering_base_url: "http://localhost:{{ vllm_port }}"
     qwen_dir_steering_timeout: 240
     qwen_dir_steering_decode_repeats: 2
@@ -25,6 +28,7 @@
     qwen_dir_steering_stance_max_tokens: 700
     qwen_dir_steering_limit: ""
     qwen_dir_steering_profile_ids: ""
+    qwen_dir_steering_default_profile_ids: "noop-dflash"
     qwen_dir_steering_extra_env: {}
 
     qwen_dir_steering_profiles:
@@ -32,6 +36,22 @@
         description: "Control profile: same Qwen DFlash launch path, no activation hook"
         extra_args: ""
         extra_body_json: ""
+        run_decode: true
+        run_ds4: true
+      - id: steer-l32-35-s005-ablate
+        description: "Experiment hook: signed-projection ablation on layers 32-35 with extracted DS4 directions"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env:
+          PYTHONPATH: "{{ qwen_dir_steering_remote_dir }}"
+          QWEN_STEERING_ENABLED: "1"
+          QWEN_STEERING_DIRECTIONS: "{{ qwen_dir_steering_directions_path }}"
+          QWEN_STEERING_LAYERS: "32,33,34,35"
+          QWEN_STEERING_SCALE: "0.05"
+          QWEN_STEERING_SIGN: "1"
+          QWEN_STEERING_MODE: "both"
+          QWEN_STEERING_METHOD: "signed_projection"
         run_decode: true
         run_ds4: true
   tasks:
@@ -43,12 +63,23 @@
 
     - name: Select requested Qwen dir-steering profiles
       ansible.builtin.set_fact:
-        qwen_dir_steering_selected_profile_ids: "{{ qwen_dir_steering_profile_ids.split(',') | map('trim') | reject('equalto', '') | list }}"
+        qwen_dir_steering_requested_profile_ids: >-
+          {{
+            (
+              qwen_dir_steering_profile_ids
+              if (qwen_dir_steering_profile_ids | length > 0)
+              else qwen_dir_steering_default_profile_ids
+            ).split(',') | map('trim') | reject('equalto', '') | list
+          }}
+
+    - name: Select requested Qwen dir-steering profile definitions
+      ansible.builtin.set_fact:
+        qwen_dir_steering_selected_profile_ids: "{{ qwen_dir_steering_requested_profile_ids }}"
         qwen_dir_steering_selected_profiles: >-
           {{
             qwen_dir_steering_profiles
-            if (qwen_dir_steering_profile_ids | length == 0)
-            else (qwen_dir_steering_profiles | selectattr('id', 'in', qwen_dir_steering_profile_ids.split(',') | map('trim') | reject('equalto', '') | list) | list)
+            if (qwen_dir_steering_requested_profile_ids | length == 0)
+            else (qwen_dir_steering_profiles | selectattr('id', 'in', qwen_dir_steering_requested_profile_ids) | list)
           }}
 
     - name: Verify requested Qwen dir-steering profiles exist
@@ -86,6 +117,18 @@
         dest: "{{ qwen_dir_steering_stance_runner }}"
         mode: "0755"
 
+    - name: Copy Qwen steering vLLM hook to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/qwen_dir_steering_vllm_plugin.py"
+        dest: "{{ qwen_dir_steering_plugin }}"
+        mode: "0644"
+
+    - name: Copy Qwen steering vLLM launcher to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/launch_vllm_with_qwen_steering.py"
+        dest: "{{ qwen_dir_steering_launcher }}"
+        mode: "0755"
+
     - name: Copy DS4 dir-steering corpus to DGX
       ansible.builtin.copy:
         src: "{{ qwen_dir_steering_corpus_src }}"
@@ -106,7 +149,8 @@
           'decode_repeats': qwen_dir_steering_decode_repeats,
           'decode_max_tokens': qwen_dir_steering_decode_max_tokens,
           'stance_max_tokens': qwen_dir_steering_stance_max_tokens,
-          'note': 'noop-dflash is a control profile; true DS4-style activation steering requires a future vLLM/Qwen model hook.'
+          'directions_path': qwen_dir_steering_directions_path,
+          'note': 'Experiment-only Qwen activation hook is loaded through wrapper profiles; production systemd service is restored in always.'
         } | to_nice_json }}"
 
     - name: Run Qwen dir-steering profiles and restore Qwen afterwards

@@ -463,3 +463,65 @@ steering is real enough to justify the work, but Qwen3.6's hybrid architecture
 makes a naive DS4 port high risk. The likely winning path is Qwen-specific
 direction extraction plus a vLLM model hook, not a prompt-only or logits-only
 adapter.
+
+## 2026-05-21 vLLM Hook Smoke
+
+Implemented an experiment-only vLLM launch path for Qwen activation steering.
+The production `vllm` systemd service is still the source of truth; the
+experiment playbook stops it, starts a temporary server from the existing venv,
+runs the requested profile matrix, and restores systemd in `always`.
+
+Implementation pieces:
+
+- `scripts/qwen_dir_steering_vllm_plugin.py` registers replacement
+  `Qwen3MoeForCausalLM` and `Qwen3_5MoeForConditionalGeneration` classes for
+  the experiment process only.
+- `scripts/launch_vllm_with_qwen_steering.py` imports the hook before calling
+  the vLLM CLI.
+- `playbooks/qwen-dir-steering-ds4.yml` now copies the hook and exposes the
+  `steer-l32-35-s005-ablate` profile.
+- `Makefile` now has `qwen-dir-steering-hook-smoke-ipv4`.
+
+Smoke command:
+
+```bash
+make qwen-dir-steering-hook-smoke-ipv4
+```
+
+Successful artifact:
+
+- `reports/qwen-dir-steering-20260521T091122Z/`
+
+Smoke result:
+
+| Profile | Decode p50 tok/s | DS4 HTTP OK | Notes |
+| --- | ---: | ---: | --- |
+| `noop-dflash` | 76.15 | 4/4 | Control, current DFlash launch path |
+| `steer-l32-35-s005-ablate` | 75.12 | 4/4 | Hook enabled on layers `32,33,34,35`, scale `0.05` |
+
+The steered server log contains `Qwen steering enabled`, `Application startup
+complete`, and no `Traceback` or `ERROR`. After the smoke run, production
+`/v1/models` again returned `qwen3.6-35b`.
+
+Implementation caveats found during bring-up:
+
+- The served AutoRound checkpoint resolves to
+  `Qwen3_5MoeForConditionalGeneration`, not the older
+  `Qwen3MoeForCausalLM` path.
+- vLLM decides whether to pass `vllm_config` by inspecting the model
+  `__init__` signature; wrappers must expose explicit `*, vllm_config, prefix`
+  parameters.
+- DFlash expects `image_token_index`, while the Qwen3.5 config exposes
+  `image_token_id`; the experiment wrapper aliases it.
+- Direction vectors must already live on CUDA before compile/cudagraph capture;
+  CPU-to-CUDA copies inside the compiled forward path fail.
+
+Next experiment:
+
+Run a small sweep over the strongest extracted bands before considering a full
+DS4 run:
+
+- layers `{34}`, `{32,33,34,35}`, `{36,37,38,39}`
+- scales `0.05`, `0.10`, `0.20`
+- accept only profiles that preserve JSON/DS4 HTTP success and do not materially
+  reduce DFlash throughput or acceptance.
