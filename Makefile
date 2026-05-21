@@ -11,6 +11,8 @@ STANCE_AB_RISK_IDS ?= contested_sovereignty_001,forced_sovereignty_pro_001,force
 FB_READER_AB_CORPUS ?= tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json
 FB_READER_AB_LIMIT ?=
 FB_READER_AB_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
+QWEN_CONDITIONAL_PROMPT_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
+QWEN_CONDITIONAL_PROMPT_WATCH_CORPUS ?= prompts/qwen_settled_watch_regression.json
 NEWS_CONTEXT_STANCE_CORPUS ?= prompts/news_context_stance_corpus.json
 NEWS_FULLTEXT_STANCE_SPEC ?= prompts/news_fulltext_stance_sources.json
 NEWS_FULLTEXT_STANCE_CORPUS ?= tmp/news-fulltext-stance-corpus.json
@@ -23,7 +25,11 @@ DS4_DIR_STEERING_SETTLED ?= prompts/ds4/settled.txt
 DS4_DIR_STEERING_CORPUS ?= tmp/ds4-dir-steering-corpus.json
 DS4_DIR_STEERING_LIMIT ?=
 QWEN_DIR_STEERING_LIMIT ?=
+QWEN_DIR_STEERING_IDS ?=
 QWEN_DIR_STEERING_PROFILE_IDS ?=
+QWEN_DIR_STEERING_PROMPT_2X2_IDS ?= ds4_contested_001,ds4_contested_002,ds4_contested_003,ds4_contested_004,ds4_contested_005,ds4_contested_006,ds4_contested_007,ds4_contested_008,ds4_contested_009,ds4_contested_010,ds4_contested_011,ds4_contested_012,ds4_settled_053,ds4_settled_055,ds4_settled_065,ds4_settled_069,ds4_settled_070,ds4_settled_071,ds4_settled_075,ds4_settled_081,ds4_settled_102,ds4_settled_103,ds4_settled_113,ds4_settled_115,ds4_settled_119
+QWEN_DIR_STEERING_PROMPT_2X2_PROFILE_IDS ?= noop-dflash-current-prompt,noop-dflash-stakeholder-prompt,steer-l32-35-s020-current-prompt,steer-l32-35-s020-stakeholder-prompt
+QWEN_DIR_STEERING_PROMPT_CONDITIONAL_PROFILE_IDS ?= noop-dflash-conditional-prompt,steer-l32-35-s020-conditional-prompt
 QWEN_DIR_STEERING_SWEEP_PROFILE_IDS ?= noop-dflash,steer-l34-s005-ablate,steer-l34-s010-ablate,steer-l34-s020-ablate,steer-l32-35-s005-ablate,steer-l32-35-s010-ablate,steer-l32-35-s020-ablate,steer-l36-39-s005-ablate,steer-l36-39-s010-ablate,steer-l36-39-s020-ablate
 QWEN_DIR_STEERING_SWEEP_LIMIT ?= 24
 QWEN_DIR_STEERING_DIRECTIONS ?= /home/devjoe/Projects/Ollama/benchmarks/qwen-dir-steering-extract-20260521T071702Z/directions.pt
@@ -41,7 +47,7 @@ GEMMA_MTP_PRHEAD_STANCE_PROFILES ?= prodctx-g1-u055,prodctx-g4-u055,fastctx-g4-u
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-sweep qwen-dir-steering-sweep-ipv4 qwen-dir-steering-fb-reader qwen-dir-steering-fb-reader-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 qwen-conditional-prompt-gate qwen-conditional-prompt-gate-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-prompt2x2 qwen-dir-steering-prompt2x2-ipv4 qwen-dir-steering-prompt-conditional qwen-dir-steering-prompt-conditional-ipv4 qwen-dir-steering-sweep qwen-dir-steering-sweep-ipv4 qwen-dir-steering-fb-reader qwen-dir-steering-fb-reader-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -78,6 +84,12 @@ fb-reader-ab-prhead-full-stance:  ## Run fb-reader A/B with the full 21-item sta
 
 fb-reader-ab-prhead-full-stance-ipv4:  ## Run full 21-item stance-v2 A/B through direct IPv4
 	$(MAKE) fb-reader-ab-prhead-full-stance INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+qwen-conditional-prompt-gate:  ## Run prompt-only Qwen conditional gate + 7 settled-watch regressions
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-conditional-prompt-gate.yml --extra-vars 'qwen_conditional_prompt_fb_reader_corpus=$(FB_READER_AB_CORPUS) qwen_conditional_prompt_fb_reader_limit=$(FB_READER_AB_LIMIT) qwen_conditional_prompt_stance_ids=$(QWEN_CONDITIONAL_PROMPT_STANCE_IDS) qwen_conditional_prompt_watch_corpus_src=$(CURDIR)/$(QWEN_CONDITIONAL_PROMPT_WATCH_CORPUS)'
+
+qwen-conditional-prompt-gate-ipv4:  ## Run prompt-only Qwen conditional gate through direct IPv4
+	$(MAKE) qwen-conditional-prompt-gate INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 news-context-stance-ab-prhead:  ## Run Trump/Xi current-news stance-v2 A/B with PR-head Gemma
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_corpus_src=$(CURDIR)/$(NEWS_CONTEXT_STANCE_CORPUS) gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE)'
@@ -136,7 +148,7 @@ ds4-dir-steering-ab-prhead-ipv4:  ## Run DS4 dir-steering A/B through direct IPv
 	$(MAKE) ds4-dir-steering-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 qwen-dir-steering-ds4: ds4-dir-steering-corpus  ## Run isolated Qwen dir-steering DS4 calibration profiles
-	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-ds4.yml --extra-vars 'qwen_dir_steering_corpus_src=$(CURDIR)/$(DS4_DIR_STEERING_CORPUS) qwen_dir_steering_limit=$(QWEN_DIR_STEERING_LIMIT) qwen_dir_steering_profile_ids=$(QWEN_DIR_STEERING_PROFILE_IDS) qwen_dir_steering_directions_path=$(QWEN_DIR_STEERING_DIRECTIONS)'
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-ds4.yml --extra-vars 'qwen_dir_steering_corpus_src=$(CURDIR)/$(DS4_DIR_STEERING_CORPUS) qwen_dir_steering_limit=$(QWEN_DIR_STEERING_LIMIT) qwen_dir_steering_ids=$(QWEN_DIR_STEERING_IDS) qwen_dir_steering_profile_ids=$(QWEN_DIR_STEERING_PROFILE_IDS) qwen_dir_steering_directions_path=$(QWEN_DIR_STEERING_DIRECTIONS)'
 
 qwen-dir-steering-ds4-ipv4:  ## Run isolated Qwen dir-steering DS4 calibration through direct IPv4
 	$(MAKE) qwen-dir-steering-ds4 INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
@@ -146,6 +158,18 @@ qwen-dir-steering-hook-smoke:  ## Smoke-test experiment Qwen activation hook aga
 
 qwen-dir-steering-hook-smoke-ipv4:  ## Smoke-test Qwen activation hook through direct IPv4
 	$(MAKE) qwen-dir-steering-hook-smoke INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+qwen-dir-steering-prompt2x2:  ## Run DS4 slice with current/stakeholder prompt x no-op/steered Qwen
+	$(MAKE) qwen-dir-steering-ds4 QWEN_DIR_STEERING_PROFILE_IDS=$(QWEN_DIR_STEERING_PROMPT_2X2_PROFILE_IDS) QWEN_DIR_STEERING_IDS=$(QWEN_DIR_STEERING_PROMPT_2X2_IDS)
+
+qwen-dir-steering-prompt2x2-ipv4:  ## Run Qwen steering prompt 2x2 through direct IPv4
+	$(MAKE) qwen-dir-steering-prompt2x2 INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+qwen-dir-steering-prompt-conditional:  ## Run DS4 slice with conditional stakeholder prompt
+	$(MAKE) qwen-dir-steering-ds4 QWEN_DIR_STEERING_PROFILE_IDS=$(QWEN_DIR_STEERING_PROMPT_CONDITIONAL_PROFILE_IDS) QWEN_DIR_STEERING_IDS=$(QWEN_DIR_STEERING_PROMPT_2X2_IDS)
+
+qwen-dir-steering-prompt-conditional-ipv4:  ## Run conditional prompt probe through direct IPv4
+	$(MAKE) qwen-dir-steering-prompt-conditional INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 qwen-dir-steering-sweep:  ## Run Qwen activation hook layer/scale sweep
 	$(MAKE) qwen-dir-steering-ds4 QWEN_DIR_STEERING_LIMIT=$(QWEN_DIR_STEERING_SWEEP_LIMIT) QWEN_DIR_STEERING_PROFILE_IDS=$(QWEN_DIR_STEERING_SWEEP_PROFILE_IDS)
@@ -260,6 +284,7 @@ lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-ds4.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-extract.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-fb-reader.yml --syntax-check
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-conditional-prompt-gate.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/fb-reader-ab-prhead.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml --syntax-check

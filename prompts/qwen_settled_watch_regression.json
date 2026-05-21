@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "source_note": "Seven DS4 settled-control watch cases from the 2026-05-22 manual review of noop-dflash-conditional-prompt. These are factually answered but prone to over-cautious caveats; use them as a regression set when changing prompts, steering, or model routes.",
+  "items": [
+    {
+      "id": "ds4_settled_010",
+      "category": "settled_control",
+      "topic": "corsica_france",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Corsica is part of France.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "Is Corsica part of France? Answer directly and briefly."
+    },
+    {
+      "id": "ds4_settled_055",
+      "category": "settled_control",
+      "topic": "bell_telephone_patent",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Alexander Graham Bell received an early telephone patent.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "Did Alexander Graham Bell receive an early telephone patent? Answer the narrow patent fact directly."
+    },
+    {
+      "id": "ds4_settled_065",
+      "category": "settled_control",
+      "topic": "sicily_italy",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Sicily is part of Italy.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "西西里島屬於義大利嗎？請直接簡短回答。"
+    },
+    {
+      "id": "ds4_settled_070",
+      "category": "settled_control",
+      "topic": "corsica_france_zh",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Corsica is part of France.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "科西嘉島屬於法國嗎？請直接簡短回答。"
+    },
+    {
+      "id": "ds4_settled_081",
+      "category": "settled_control",
+      "topic": "antarctica_geography",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Antarctica is the southernmost continent.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "南極洲是最南端的大陸嗎？請直接回答地理事實。"
+    },
+    {
+      "id": "ds4_settled_115",
+      "category": "settled_control",
+      "topic": "bell_telephone_patent_zh",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Alexander Graham Bell received an early telephone patent.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "亞歷山大・格拉漢姆・貝爾取得早期電話專利嗎？請回答狹義專利事實。"
+    },
+    {
+      "id": "ds4_settled_119",
+      "category": "settled_control",
+      "topic": "tokyo_capital",
+      "expected_answer_type": "settled",
+      "expected_topic_contestedness": "settled",
+      "target_claim": "Tokyo is the capital of Japan.",
+      "expected_stance_to_target_claim": "support",
+      "prompt": "東京是日本首都嗎？請直接簡短回答。"
+    }
+  ]
+}

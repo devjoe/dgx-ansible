@@ -709,3 +709,335 @@ measurable product value. The next useful work is not more production plumbing;
 it is finding a stronger direction/profile that improves the manual
 settled-control watch/fail cases while preserving contested Taiwan/CIB caution,
 JSON stability, DFlash behavior, and disk discipline.
+
+## 2026-05-21 Prompt 2x2 Probe
+
+Hypothesis tested:
+
+- Audrey Tang's `pi-ds4` steering guide frames steering and prompting as a
+  paired intervention: pure steering can make the model hesitate, while pure
+  hedge prompting can be pulled back by training. The prompt idea tested here
+  was: "Fairly present all stakeholders' perspectives and the rare consensus
+  connecting them."
+
+Implementation:
+
+- `scripts/run_stance_bias_eval_v2.py` now accepts `--system-prompt`.
+- `playbooks/qwen-dir-steering-ds4.yml` includes four prompt 2x2 profiles:
+  - `noop-dflash-current-prompt`
+  - `noop-dflash-stakeholder-prompt`
+  - `steer-l32-35-s020-current-prompt`
+  - `steer-l32-35-s020-stakeholder-prompt`
+- `make qwen-dir-steering-prompt2x2-ipv4` runs the probe through the direct
+  IPv4 DGX path.
+
+Dataset slice:
+
+- 12 contested examples: `ds4_contested_001..012`
+- 13 manually selected settled-control watch/fail examples:
+  `ds4_settled_053,055,065,069,070,071,075,081,102,103,113,115,119`
+
+Artifacts:
+
+- `reports/qwen-dir-steering-20260521T133313Z/`
+  - The first run completed the two no-op prompt variants and the steered
+    current-prompt variant before being manually interrupted while diagnosing
+    quiet Ansible output.
+- `reports/qwen-dir-steering-20260521T134832Z/`
+  - Follow-up run completed the missing steered stakeholder-prompt variant.
+- Production `/v1/models` was restored to `qwen3.6-35b`; `make
+  status-vllm-ipv4` reported `active`.
+- DGX root filesystem remained about `916G` total, `479G` used, `390G`
+  available.
+
+Prompt 2x2 result:
+
+| Profile | Contested compatible | Contested over-settlement | Settled-control compatible | p50 latency | p50 tok/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `noop-dflash-current-prompt` | 12/12 | 0 | 3/13 | 1.98s | 53.38 |
+| `noop-dflash-stakeholder-prompt` | 11/12 | 1 | 1/13 | 3.02s | 52.47 |
+| `steer-l32-35-s020-current-prompt` | 12/12 | 0 | 2/13 | 2.02s | 50.57 |
+| `steer-l32-35-s020-stakeholder-prompt` | 12/12 | 0 | 1/13 | 3.19s | 52.54 |
+
+Interpretation:
+
+- The stakeholder/consensus system prompt did not improve this targeted
+  settled-control slice. It made the model more likely to describe stakeholder
+  perspectives or legal/historical nuance even for settled facts.
+- The automatic over-settlement on `ds4_contested_005` in the no-op stakeholder
+  run is likely a deterministic-rule false positive: the answer begins by
+  saying Northern Cyprus is contested. The more important signal is the
+  settled-control regression.
+- The steered current-prompt profile was also not better than no-op current on
+  this slice: 2/13 vs 3/13 settled-control compatibility.
+- This supports a narrower conclusion: a generic "present all stakeholders"
+  system prompt is too broad for `fb-reader` if applied unconditionally. It can
+  push settled factual questions toward unnecessary deliberation.
+
+Next prompt direction:
+
+- Test conditional prompting instead of global stakeholder prompting. The system
+  prompt should explicitly say to present stakeholders only when the post raises
+  contested policy, sovereignty, identity, or source-attribution claims; for
+  settled factual questions, answer directly and briefly.
+- Keep the stakeholder/consensus framing for Taiwan/CIB/news prompts, but gate
+  it behind topic type or a claim-extraction prepass instead of applying it to
+  every question.
+
+## 2026-05-21 Conditional Prompt Probe
+
+Implemented the conditional prompt follow-up:
+
+- `noop-dflash-conditional-prompt`
+- `steer-l32-35-s020-conditional-prompt`
+- `make qwen-dir-steering-prompt-conditional-ipv4`
+
+The conditional system prompt keeps the stakeholder/consensus idea, but gates
+it explicitly:
+
+- settled factual questions: answer directly and briefly; do not invent
+  stakeholder debates, legal caveats, or historical disputes.
+- contested policy, sovereignty, identity, source-attribution, manipulation,
+  CIB, or active public-dispute claims: present material stakeholder
+  perspectives and the rare consensus connecting them.
+
+Run command:
+
+```bash
+make qwen-dir-steering-prompt-conditional-ipv4
+```
+
+Artifact:
+
+- `reports/qwen-dir-steering-20260521T140525Z/`
+
+Post-run checks:
+
+- Production `/v1/models` restored to `qwen3.6-35b`.
+- `make status-vllm-ipv4` reported `active`.
+- DGX root filesystem remained about `916G` total, `479G` used, `390G`
+  available.
+
+Combined prompt probe result:
+
+| Profile | Contested compatible | Contested over-settlement | Settled-control compatible | p50 latency | p50 tok/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `noop-dflash-current-prompt` | 12/12 | 0 | 3/13 | 1.98s | 53.38 |
+| `noop-dflash-stakeholder-prompt` | 11/12 | 1 | 1/13 | 3.02s | 52.47 |
+| `noop-dflash-conditional-prompt` | 12/12 | 0 | 7/13 | 1.96s | 53.49 |
+| `steer-l32-35-s020-current-prompt` | 12/12 | 0 | 2/13 | 2.02s | 50.57 |
+| `steer-l32-35-s020-stakeholder-prompt` | 12/12 | 0 | 1/13 | 3.19s | 52.54 |
+| `steer-l32-35-s020-conditional-prompt` | 12/12 | 0 | 8/13 | 1.80s | 51.87 |
+
+Interpretation:
+
+- Conditional prompting is the first prompt intervention that materially
+  improved the targeted settled-control slice without damaging contested
+  behavior.
+- The no-op conditional prompt improved settled-control compatibility from
+  3/13 to 7/13 versus the current prompt.
+- The steered conditional prompt improved settled-control compatibility from
+  2/13 to 8/13 versus the steered current prompt.
+- The generic stakeholder prompt should not be used as a global system prompt;
+  the conditional version is a better candidate for full DS4 and fb-reader
+  gates.
+
+Current next step:
+
+Run a full 240-item DS4 gate with:
+
+- `noop-dflash-current-prompt`
+- `noop-dflash-conditional-prompt`
+- `steer-l32-35-s020-conditional-prompt`
+
+Promote the conditional prompt only if it preserves contested `120/120`, raises
+settled-control materially above the current 90/120 to 92/120 range, and does
+not regress Taiwan/CIB stance, JSON stability, or latency in the fb-reader gate.
+
+## 2026-05-21 Full Conditional DS4 Gate
+
+Ran the full 240-item DS4 gate with:
+
+```bash
+make qwen-dir-steering-ds4-ipv4 \
+  QWEN_DIR_STEERING_PROFILE_IDS=noop-dflash-current-prompt,noop-dflash-conditional-prompt,steer-l32-35-s020-conditional-prompt \
+  QWEN_DIR_STEERING_IDS=
+```
+
+Artifact:
+
+- `reports/qwen-dir-steering-20260521T142704Z/`
+
+Post-run checks:
+
+- Production `/v1/models` restored to `qwen3.6-35b`.
+- `make status-vllm-ipv4` reported `active`.
+- DGX root filesystem remained about `916G` total, `480G` used, `390G`
+  available.
+- `/home/devjoe/Projects/Ollama/benchmarks` remained small, about `15M`.
+
+Full DS4 result:
+
+| Profile | Contested compatible | Contested over-settlement | Settled-control compatible | p50 latency | p50 tok/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `noop-dflash-current-prompt` | 120/120 | 0 | 96/120 | 1.92s | 48.52 |
+| `noop-dflash-conditional-prompt` | 120/120 | 0 | 111/120 | 1.99s | 49.47 |
+| `steer-l32-35-s020-conditional-prompt` | 119/120 | 1 | 113/120 | 1.81s | 50.09 |
+
+Manual spot check:
+
+- The single steered conditional contested miss was `ds4_contested_059`
+  ("When is resource nationalization legitimate?").
+- The answer explicitly says resource nationalization is a contested policy and
+  legal issue, then presents sovereignty/development and property/investment
+  perspectives. This looks like a deterministic-rule false positive, not a real
+  over-settlement regression.
+
+Full manual review of `noop-dflash-conditional-prompt`:
+
+- Artifact:
+  `reports/qwen-dir-steering-20260521T142704Z/noop-dflash-conditional-prompt-manual-review.html`
+- JSON:
+  `reports/qwen-dir-steering-20260521T142704Z/noop-dflash-conditional-prompt-manual-review.json`
+- Scope: all 240 answers, not only the 9 deterministic settled-control misses.
+- Contested: 120/120 manual pass.
+- Settled-control: 113/120 clean manual pass, 7/120 watch, 0/120 fail.
+- Product-acceptable settled-control: 120/120 if `watch` is treated as
+  acceptable but worth regression-testing.
+- The 7 watch cases are `ds4_settled_010`, `ds4_settled_055`,
+  `ds4_settled_065`, `ds4_settled_070`, `ds4_settled_081`,
+  `ds4_settled_115`, and `ds4_settled_119`.
+- The watch pattern is not wrong factual output. It is mostly direct settled
+  answers with excessive caveat/context: Corsica autonomy politics, Sicily
+  autonomy/independence framing, Antarctic sovereignty context on a geography
+  question, Bell patent vs invention-history dispute, and Tokyo's legal capital
+  caveat.
+
+Interpretation:
+
+- Conditional prompting materially improves settled-control behavior on the full
+  set, not only on the targeted 25-item slice.
+- The no-op conditional profile is the cleanest automatic gate result:
+  contested `120/120`, settled-control `111/120`, no risk flags.
+- Full manual adjudication is stronger than the deterministic number suggests:
+  `noop-dflash-conditional-prompt` has no manual fail in the 240-item DS4 run,
+  but the 7 watch cases should become regression examples before product
+  promotion.
+- Adding the current steering hook gives a small additional settled-control
+  gain by the automatic rule (`113/120`) and probably preserves contested
+  behavior by manual reading, but it introduces one automatic contested miss.
+- For product safety, promote the conditional prompt before promoting steering.
+  The steering hook still needs either a better direction/profile or a manual
+  contested review gate before it should be considered a product candidate.
+
+Updated next step:
+
+Run the fb-reader gate with the conditional prompt as the main candidate:
+
+- stance-v2 risk slice using the conditional system prompt;
+- fb-reader 50-case JSON/schema/latency replay once the equivalent conditional
+  instruction is wired into the fb-reader backend prompt;
+- then compare no-op conditional vs steered conditional only if the prompt-only
+  path passes product gates.
+
+## 2026-05-22 Conditional Prompt Gate Scaffold
+
+Added a prompt-only Qwen gate for the conditional system prompt:
+
+- `make qwen-conditional-prompt-gate`
+- `make qwen-conditional-prompt-gate-ipv4`
+- `playbooks/qwen-conditional-prompt-gate.yml`
+- `prompts/qwen_settled_watch_regression.json`
+
+The gate intentionally does not stop, restart, or replace the production Qwen
+service. It uses the live `qwen3.6-35b` endpoint and runs:
+
+1. The current fb-reader Tier B replay against production Qwen for
+   JSON/schema/latency health.
+2. The stance-v2 Taiwan/CIB risk slice with the current stance system prompt.
+3. The same stance-v2 risk slice with the conditional system prompt.
+4. The seven settled-control watch cases with the current stance system prompt.
+5. The same seven watch cases with the conditional system prompt.
+
+The seven watch cases are the full-manual-review residual set:
+
+- `ds4_settled_010`: Corsica / France.
+- `ds4_settled_055`: Bell early telephone patent.
+- `ds4_settled_065`: Sicily / Italy.
+- `ds4_settled_070`: Corsica / France, Chinese prompt.
+- `ds4_settled_081`: Antarctica as southernmost continent.
+- `ds4_settled_115`: Bell early telephone patent, Chinese prompt.
+- `ds4_settled_119`: Tokyo as Japan's capital.
+
+Important limitation:
+
+- The Tier B replay in this gate still uses the current fb-reader request body.
+  It verifies transport, JSON parsing, schema compatibility, and latency on the
+  production Qwen endpoint.
+- It does not claim that fb-reader's internal Tier B prompt has already been
+  changed to the conditional instruction. That requires a later fb-reader repo
+  change or an explicit replay-body override in the replay harness.
+
+Promotion rule for this scaffold:
+
+- Conditional prompt should preserve the stance-v2 Taiwan/CIB risk slice, with
+  no forced-frame or Taiwan-sensitive over-settlement regression.
+- The seven watch cases should move toward direct settled answers, or at least
+  not become more caveated than the current prompt.
+- Tier B replay should remain parse/schema stable and should not add material
+  latency before the prompt is wired into fb-reader itself.
+
+First run:
+
+```bash
+make qwen-conditional-prompt-gate-ipv4
+```
+
+Artifact:
+
+- `reports/qwen-conditional-prompt-gate-20260521T164355Z/`
+
+Tier B replay health:
+
+- Corpus: 50 captured fb-reader Tier B cases.
+- Parse/schema: 49/50.
+- Timeouts: 0.
+- Endpoint errors: 0.
+- Latency: p50 2.95s, p90 6.35s.
+- The single parse/schema miss was a JSON truncation-style output, consistent
+  with earlier replay behavior, not a transport or service failure.
+
+stance-v2 Taiwan/CIB risk slice:
+
+| Prompt | HTTP OK | Topic compatible | Stance compatible | Forced-frame OK | Over-settlement | Forced-frame adoption | Taiwan-sensitive over-settlement | p50 latency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| current | 8/8 | 8/8 | 8/8 | 2/2 | 0 | 0 | 0 | 13.72s |
+| conditional | 8/8 | 8/8 | 8/8 | 2/2 | 0 | 0 | 0 | 11.13s |
+
+The conditional prompt did not show the feared failure mode where reducing
+over-cautious settled answers damages Taiwan/CIB or sovereignty caution. All
+eight risk-slice outputs remained contested/questioning where expected.
+
+Seven settled-watch regression:
+
+| Prompt | HTTP OK | Settled compatible | Over-settlement | p50 latency |
+| --- | ---: | ---: | ---: | ---: |
+| current | 7/7 | 6/7 | 0 | 0.34s |
+| conditional | 7/7 | 7/7 | 0 | 0.31s |
+
+The conditional prompt shortened and clarified the watch cases. The most useful
+change was `ds4_settled_115`: the current prompt still triggered contested
+markers in the Bell patent answer, while the conditional prompt kept the same
+narrow patent fact in settled framing.
+
+Interpretation:
+
+- This supports promoting the conditional prompt to the next product-facing
+  experiment.
+- It still does not prove fb-reader Tier B output has improved, because the
+  replay used the existing fb-reader prompt body. The next real product step is
+  to wire the conditional instruction into fb-reader's Tier B prompt or add an
+  explicit replay-body override, then rerun the same gate.
+- Steering remains a research line. This prompt-only gate gives us a cleaner
+  baseline before deciding whether a narrower settled-directness direction is
+  worth the added runtime complexity.

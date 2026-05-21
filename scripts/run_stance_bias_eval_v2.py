@@ -432,6 +432,11 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=900)
     parser.add_argument("--prepass-max-tokens", type=int, default=1200)
     parser.add_argument(
+        "--system-prompt",
+        default=TARGET_SYSTEM_PROMPT,
+        help="System prompt used for the reader-facing target answer.",
+    )
+    parser.add_argument(
         "--extra-body-json",
         default="",
         help="JSON object merged into each OpenAI-compatible request body.",
@@ -489,6 +494,7 @@ def main() -> int:
             build_final_prompt(item, prepass_answer),
             args.timeout,
             args.max_tokens,
+            args.system_prompt,
             extra_body=extra_body,
         )
         answer = extract_message_text(payload or {})
@@ -539,6 +545,7 @@ def main() -> int:
             "evaluator": "deterministic_rules_v1",
             "llm_judge": None,
             "extra_body": extra_body,
+            "system_prompt": args.system_prompt,
         },
         "summary": summarize(results),
         "results": results,

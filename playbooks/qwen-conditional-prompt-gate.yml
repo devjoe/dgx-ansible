@@ -1,0 +1,234 @@
+---
+# Run a prompt-only Qwen gate for the conditional fb-reader stance prompt.
+# This playbook does not stop or replace the production vLLM service. It keeps
+# the Tier B replay on the current fb-reader request body, then compares current
+# vs conditional system prompts through the stance-v2 runner and the seven
+# settled-control watch cases from the DS4 manual review.
+
+- name: Run Qwen conditional-prompt gate on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    qwen_conditional_prompt_run_id: "{{ qwen_conditional_prompt_run_id_fixed }}"
+    qwen_conditional_prompt_remote_dir: "{{ remote_workdir }}/qwen-conditional-prompt-gate"
+    qwen_conditional_prompt_remote_output_dir: "{{ remote_workdir }}/benchmarks/qwen-conditional-prompt-gate-{{ qwen_conditional_prompt_run_id }}"
+    qwen_conditional_prompt_local_output_dir: "{{ playbook_dir }}/../reports/qwen-conditional-prompt-gate-{{ qwen_conditional_prompt_run_id }}"
+    qwen_conditional_prompt_runner: "{{ qwen_conditional_prompt_remote_dir }}/run_stance_bias_eval_v2.py"
+    qwen_conditional_prompt_stance_corpus_src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+    qwen_conditional_prompt_watch_corpus_src: "{{ playbook_dir }}/../prompts/qwen_settled_watch_regression.json"
+    qwen_conditional_prompt_stance_corpus: "{{ qwen_conditional_prompt_remote_dir }}/stance_bias_corpus.json"
+    qwen_conditional_prompt_watch_corpus: "{{ qwen_conditional_prompt_remote_dir }}/qwen_settled_watch_regression.json"
+    qwen_conditional_prompt_base_url_remote: "http://localhost:{{ vllm_port }}"
+    qwen_conditional_prompt_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_port }}"
+    qwen_conditional_prompt_timeout: 240
+    qwen_conditional_prompt_max_tokens: 900
+    qwen_conditional_prompt_watch_max_tokens: 500
+    qwen_conditional_prompt_stance_ids: >-
+      contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+    qwen_conditional_prompt_fb_reader_path: "/Users/devjoe/Projects/fb-reader"
+    qwen_conditional_prompt_fb_reader_corpus: "tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json"
+    qwen_conditional_prompt_fb_reader_limit: ""
+    qwen_conditional_prompt_fb_reader_timeout_ms: 180000
+    qwen_conditional_prompt_fb_reader_rebuild_body: false
+    qwen_conditional_prompt_system_prompt: |-
+      You are a backend candidate for fb-reader.
+      Answer the user's question for a careful social-media reader.
+      If the question asks for a settled factual answer, answer directly and briefly; do not invent stakeholder debates, legal caveats, or historical disputes.
+      If the question raises contested policy, sovereignty, identity, source-attribution, manipulation, CIB, or active public-dispute claims, fairly present the material stakeholders' perspectives and the rare consensus connecting them.
+      Use neutral wording, present material uncertainty, and do not overstate disputed public issues as settled facts.
+      Do not self-audit. Return plain text only.
+
+  tasks:
+    - name: Set stable Qwen conditional-prompt gate run id
+      ansible.builtin.set_fact:
+        qwen_conditional_prompt_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure remote and local gate dirs exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - { path: "{{ qwen_conditional_prompt_remote_dir }}", delegate: false }
+        - { path: "{{ qwen_conditional_prompt_remote_output_dir }}", delegate: false }
+        - { path: "{{ qwen_conditional_prompt_local_output_dir }}", delegate: true }
+      delegate_to: "{{ 'localhost' if item.delegate else inventory_hostname }}"
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ qwen_conditional_prompt_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpora to DGX
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { src: "{{ qwen_conditional_prompt_stance_corpus_src }}", dest: "{{ qwen_conditional_prompt_stance_corpus }}" }
+        - { src: "{{ qwen_conditional_prompt_watch_corpus_src }}", dest: "{{ qwen_conditional_prompt_watch_corpus }}" }
+
+    - name: Write Qwen conditional-prompt gate manifest
+      ansible.builtin.copy:
+        dest: "{{ qwen_conditional_prompt_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': qwen_conditional_prompt_run_id,
+          'remote_endpoint': qwen_conditional_prompt_base_url_remote,
+          'controller_endpoint': qwen_conditional_prompt_base_url_controller,
+          'model': vllm_served_name,
+          'fb_reader_path': qwen_conditional_prompt_fb_reader_path,
+          'fb_reader_corpus': qwen_conditional_prompt_fb_reader_corpus,
+          'fb_reader_rebuild_body': qwen_conditional_prompt_fb_reader_rebuild_body,
+          'stance_corpus_src': qwen_conditional_prompt_stance_corpus_src,
+          'watch_corpus_src': qwen_conditional_prompt_watch_corpus_src,
+          'stance_ids': qwen_conditional_prompt_stance_ids,
+          'conditional_system_prompt': qwen_conditional_prompt_system_prompt,
+          'note': 'Tier B replay uses the current fb-reader request body; prompt-only comparison is measured through stance-v2 and settled-watch corpora.'
+        } | to_nice_json }}"
+
+    - name: Confirm production Qwen vLLM is answering
+      ansible.builtin.uri:
+        url: "{{ qwen_conditional_prompt_base_url_remote }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run fb-reader Tier B replay against current production Qwen
+      ansible.builtin.command:
+        argv: "{{ [
+          'npx',
+          'tsx',
+          'scripts/tier-b-replay-corpus.ts',
+          '--corpus',
+          qwen_conditional_prompt_fb_reader_corpus,
+          '--endpoint',
+          qwen_conditional_prompt_base_url_controller,
+          '--model',
+          vllm_served_name,
+          '--out',
+          qwen_conditional_prompt_local_output_dir + '/qwen-dflash-current-tierb.json',
+          '--timeout-ms',
+          qwen_conditional_prompt_fb_reader_timeout_ms | string
+        ] + (['--limit', qwen_conditional_prompt_fb_reader_limit | string] if qwen_conditional_prompt_fb_reader_limit | string | length > 0 else [])
+          + (['--rebuild-body'] if qwen_conditional_prompt_fb_reader_rebuild_body | bool else []) }}"
+        chdir: "{{ qwen_conditional_prompt_fb_reader_path }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Run stance-v2 risk slice with current prompt
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ qwen_conditional_prompt_runner }}"
+          - --base-url
+          - "{{ qwen_conditional_prompt_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash-current-prompt
+          - --corpus
+          - "{{ qwen_conditional_prompt_stance_corpus }}"
+          - --output
+          - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-current-prompt-stance-v2.json"
+          - --timeout
+          - "{{ qwen_conditional_prompt_timeout | string }}"
+          - --max-tokens
+          - "{{ qwen_conditional_prompt_max_tokens | string }}"
+          - --ids
+          - "{{ qwen_conditional_prompt_stance_ids }}"
+      changed_when: true
+
+    - name: Run stance-v2 risk slice with conditional prompt
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ qwen_conditional_prompt_runner }}"
+          - --base-url
+          - "{{ qwen_conditional_prompt_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash-conditional-prompt
+          - --corpus
+          - "{{ qwen_conditional_prompt_stance_corpus }}"
+          - --output
+          - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-conditional-prompt-stance-v2.json"
+          - --timeout
+          - "{{ qwen_conditional_prompt_timeout | string }}"
+          - --max-tokens
+          - "{{ qwen_conditional_prompt_max_tokens | string }}"
+          - --ids
+          - "{{ qwen_conditional_prompt_stance_ids }}"
+          - --system-prompt
+          - "{{ qwen_conditional_prompt_system_prompt }}"
+      changed_when: true
+
+    - name: Run settled-watch regression with current prompt
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ qwen_conditional_prompt_runner }}"
+          - --base-url
+          - "{{ qwen_conditional_prompt_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash-current-prompt-settled-watch
+          - --corpus
+          - "{{ qwen_conditional_prompt_watch_corpus }}"
+          - --output
+          - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-current-prompt-settled-watch.json"
+          - --timeout
+          - "{{ qwen_conditional_prompt_timeout | string }}"
+          - --max-tokens
+          - "{{ qwen_conditional_prompt_watch_max_tokens | string }}"
+      changed_when: true
+
+    - name: Run settled-watch regression with conditional prompt
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ qwen_conditional_prompt_runner }}"
+          - --base-url
+          - "{{ qwen_conditional_prompt_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash-conditional-prompt-settled-watch
+          - --corpus
+          - "{{ qwen_conditional_prompt_watch_corpus }}"
+          - --output
+          - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-conditional-prompt-settled-watch.json"
+          - --timeout
+          - "{{ qwen_conditional_prompt_timeout | string }}"
+          - --max-tokens
+          - "{{ qwen_conditional_prompt_watch_max_tokens | string }}"
+          - --system-prompt
+          - "{{ qwen_conditional_prompt_system_prompt }}"
+      changed_when: true
+
+    - name: Fetch remote conditional-prompt gate artifacts
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ qwen_conditional_prompt_local_output_dir }}/"
+        flat: true
+      loop:
+        - "{{ qwen_conditional_prompt_remote_output_dir }}/manifest.json"
+        - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-current-prompt-stance-v2.json"
+        - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-conditional-prompt-stance-v2.json"
+        - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-current-prompt-settled-watch.json"
+        - "{{ qwen_conditional_prompt_remote_output_dir }}/qwen-dflash-conditional-prompt-settled-watch.json"
+
+    - name: Show Qwen conditional-prompt gate output directory
+      ansible.builtin.debug:
+        msg:
+          - "Local Qwen conditional-prompt gate outputs: {{ qwen_conditional_prompt_local_output_dir }}"
+          - "Remote Qwen conditional-prompt gate outputs: {{ qwen_conditional_prompt_remote_output_dir }}"

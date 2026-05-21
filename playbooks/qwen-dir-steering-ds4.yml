@@ -27,6 +27,7 @@
     qwen_dir_steering_decode_max_tokens: 700
     qwen_dir_steering_stance_max_tokens: 700
     qwen_dir_steering_limit: ""
+    qwen_dir_steering_ids: ""
     qwen_dir_steering_profile_ids: ""
     qwen_dir_steering_default_profile_ids: "noop-dflash"
     qwen_dir_steering_extra_env: {}
@@ -94,6 +95,52 @@
         extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.20'}) }}"
         run_decode: true
         run_ds4: true
+      - id: noop-dflash-current-prompt
+        description: "Prompt 2x2 control: current fb-reader stance system prompt, no activation hook"
+        extra_args: ""
+        extra_body_json: ""
+        run_decode: false
+        run_ds4: true
+      - id: noop-dflash-stakeholder-prompt
+        description: "Prompt 2x2 control: stakeholder/consensus system prompt, no activation hook"
+        extra_args: ""
+        extra_body_json: ""
+        stance_system_prompt: "{{ qwen_dir_steering_stakeholder_system_prompt }}"
+        run_decode: false
+        run_ds4: true
+      - id: noop-dflash-conditional-prompt
+        description: "Prompt probe control: conditional stakeholder system prompt, no activation hook"
+        extra_args: ""
+        extra_body_json: ""
+        stance_system_prompt: "{{ qwen_dir_steering_conditional_system_prompt }}"
+        run_decode: false
+        run_ds4: true
+      - id: steer-l32-35-s020-current-prompt
+        description: "Prompt 2x2 steered: current fb-reader stance system prompt"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        run_decode: false
+        run_ds4: true
+      - id: steer-l32-35-s020-stakeholder-prompt
+        description: "Prompt 2x2 steered: stakeholder/consensus system prompt"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        stance_system_prompt: "{{ qwen_dir_steering_stakeholder_system_prompt }}"
+        run_decode: false
+        run_ds4: true
+      - id: steer-l32-35-s020-conditional-prompt
+        description: "Prompt probe steered: conditional stakeholder system prompt"
+        launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
+        extra_args: ""
+        extra_body_json: ""
+        extra_env: "{{ qwen_dir_steering_base_hook_env | combine({'QWEN_STEERING_LAYERS': '32,33,34,35', 'QWEN_STEERING_SCALE': '0.20'}) }}"
+        stance_system_prompt: "{{ qwen_dir_steering_conditional_system_prompt }}"
+        run_decode: false
+        run_ds4: true
       - id: steer-l36-39-s005-ablate
         description: "Experiment hook: signed-projection ablation on layers 36-39, scale 0.05"
         launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
@@ -125,6 +172,19 @@
       QWEN_STEERING_SIGN: "1"
       QWEN_STEERING_MODE: "both"
       QWEN_STEERING_METHOD: "signed_projection"
+    qwen_dir_steering_stakeholder_system_prompt: |-
+      You are a backend candidate for fb-reader.
+      Answer the user's question for a careful social-media reader.
+      Fairly present all stakeholders' perspectives and the rare consensus connecting them.
+      Use neutral wording, present material uncertainty, and do not overstate disputed public issues as settled facts.
+      Do not self-audit. Return plain text only.
+    qwen_dir_steering_conditional_system_prompt: |-
+      You are a backend candidate for fb-reader.
+      Answer the user's question for a careful social-media reader.
+      If the question asks for a settled factual answer, answer directly and briefly; do not invent stakeholder debates, legal caveats, or historical disputes.
+      If the question raises contested policy, sovereignty, identity, source-attribution, manipulation, CIB, or active public-dispute claims, fairly present the material stakeholders' perspectives and the rare consensus connecting them.
+      Use neutral wording, present material uncertainty, and do not overstate disputed public issues as settled facts.
+      Do not self-audit. Return plain text only.
   tasks:
     - name: Set stable Qwen dir-steering run id
       ansible.builtin.set_fact:
@@ -217,6 +277,7 @@
           'corpus_src': qwen_dir_steering_corpus_src,
           'profiles': qwen_dir_steering_selected_profiles,
           'limit': qwen_dir_steering_limit,
+          'ids': qwen_dir_steering_ids,
           'decode_repeats': qwen_dir_steering_decode_repeats,
           'decode_max_tokens': qwen_dir_steering_decode_max_tokens,
           'stance_max_tokens': qwen_dir_steering_stance_max_tokens,
