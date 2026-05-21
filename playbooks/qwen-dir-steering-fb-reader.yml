@@ -1,0 +1,360 @@
+---
+# Run fb-reader replay and stance-v2 against production Qwen and an
+# experiment-only steered Qwen profile. The Ansible-managed vLLM service is
+# restored in `always`.
+
+- name: Run fb-reader regression for steered Qwen on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    fb_reader_ab_run_id: "{{ fb_reader_ab_run_id_fixed }}"
+    fb_reader_ab_remote_dir: "{{ remote_workdir }}/qwen-dir-steering-fb-reader"
+    fb_reader_ab_remote_output_dir: "{{ remote_workdir }}/benchmarks/qwen-dir-steering-fb-reader-{{ fb_reader_ab_run_id }}"
+    fb_reader_ab_stance_runner: "{{ fb_reader_ab_remote_dir }}/run_stance_bias_eval_v2.py"
+    fb_reader_ab_stance_corpus: "{{ fb_reader_ab_remote_dir }}/stance_bias_corpus.json"
+    fb_reader_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
+    fb_reader_ab_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_port }}"
+    fb_reader_ab_fb_reader_path: "/Users/devjoe/Projects/fb-reader"
+    fb_reader_ab_corpus: "tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json"
+    fb_reader_ab_local_output_dir: "{{ fb_reader_ab_fb_reader_path }}/tmp/tier-b-replay/qwen-steering-{{ fb_reader_ab_run_id }}"
+    fb_reader_ab_limit: ""
+    fb_reader_ab_timeout_ms: 180000
+    fb_reader_ab_rebuild_body: false
+    fb_reader_ab_stance_ids: >-
+      contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+    fb_reader_ab_stance_timeout: 240
+    fb_reader_ab_stance_max_tokens: 900
+
+    qwen_dir_steering_profile_id: "steer-l32-35-s020-ablate"
+    qwen_dir_steering_remote_dir: "{{ remote_workdir }}/qwen-dir-steering"
+    qwen_dir_steering_plugin: "{{ qwen_dir_steering_remote_dir }}/qwen_dir_steering_vllm_plugin.py"
+    qwen_dir_steering_launcher: "{{ qwen_dir_steering_remote_dir }}/launch_vllm_with_qwen_steering.py"
+    qwen_dir_steering_directions_path: "{{ remote_workdir }}/benchmarks/qwen-dir-steering-extract-20260521T071702Z/directions.pt"
+    qwen_dir_steering_label: "{{ qwen_dir_steering_profile_id }}"
+    qwen_dir_steering_env:
+      PYTHONPATH: "{{ qwen_dir_steering_remote_dir }}"
+      QWEN_STEERING_ENABLED: "1"
+      QWEN_STEERING_DIRECTIONS: "{{ qwen_dir_steering_directions_path }}"
+      QWEN_STEERING_LAYERS: "32,33,34,35"
+      QWEN_STEERING_SCALE: "0.20"
+      QWEN_STEERING_SIGN: "1"
+      QWEN_STEERING_MODE: "both"
+      QWEN_STEERING_METHOD: "signed_projection"
+
+  tasks:
+    - name: Set stable fb-reader steering run id
+      ansible.builtin.set_fact:
+        fb_reader_ab_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Ensure remote and local output dirs exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - { path: "{{ fb_reader_ab_remote_dir }}", delegate: false }
+        - { path: "{{ fb_reader_ab_remote_output_dir }}", delegate: false }
+        - { path: "{{ qwen_dir_steering_remote_dir }}", delegate: false }
+        - { path: "{{ fb_reader_ab_local_output_dir }}", delegate: true }
+      delegate_to: "{{ 'localhost' if item.delegate else inventory_hostname }}"
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ fb_reader_ab_stance_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+        dest: "{{ fb_reader_ab_stance_corpus }}"
+        mode: "0644"
+
+    - name: Copy Qwen steering vLLM hook to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/qwen_dir_steering_vllm_plugin.py"
+        dest: "{{ qwen_dir_steering_plugin }}"
+        mode: "0644"
+
+    - name: Copy Qwen steering vLLM launcher to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/launch_vllm_with_qwen_steering.py"
+        dest: "{{ qwen_dir_steering_launcher }}"
+        mode: "0755"
+
+    - name: Write fb-reader steering manifest
+      ansible.builtin.copy:
+        dest: "{{ fb_reader_ab_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': fb_reader_ab_run_id,
+          'controller_endpoint': fb_reader_ab_base_url_controller,
+          'remote_endpoint': fb_reader_ab_base_url_remote,
+          'fb_reader_path': fb_reader_ab_fb_reader_path,
+          'fb_reader_corpus': fb_reader_ab_corpus,
+          'local_output_dir': fb_reader_ab_local_output_dir,
+          'qwen_model': vllm_served_name,
+          'steering_profile': qwen_dir_steering_profile_id,
+          'steering_env': qwen_dir_steering_env,
+          'directions_path': qwen_dir_steering_directions_path,
+          'stance_ids': fb_reader_ab_stance_ids
+        } | to_nice_json }}"
+
+    - name: Confirm production Qwen vLLM is answering before baseline
+      ansible.builtin.uri:
+        url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run fb-reader replay against Qwen baseline
+      ansible.builtin.command:
+        argv: "{{ [
+          'npx',
+          'tsx',
+          'scripts/tier-b-replay-corpus.ts',
+          '--corpus',
+          fb_reader_ab_corpus,
+          '--endpoint',
+          fb_reader_ab_base_url_controller,
+          '--model',
+          vllm_served_name,
+          '--out',
+          fb_reader_ab_local_output_dir + '/qwen-dflash.json',
+          '--timeout-ms',
+          fb_reader_ab_timeout_ms | string
+        ] + (['--limit', fb_reader_ab_limit | string] if fb_reader_ab_limit | string | length > 0 else [])
+          + (['--rebuild-body'] if fb_reader_ab_rebuild_body | bool else []) }}"
+        chdir: "{{ fb_reader_ab_fb_reader_path }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Run stance-v2 against Qwen baseline
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ fb_reader_ab_stance_runner }}"
+          - --base-url
+          - "{{ fb_reader_ab_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash
+          - --corpus
+          - "{{ fb_reader_ab_stance_corpus }}"
+          - --output
+          - "{{ fb_reader_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+          - --timeout
+          - "{{ fb_reader_ab_stance_timeout | string }}"
+          - --max-tokens
+          - "{{ fb_reader_ab_stance_max_tokens | string }}"
+          - --ids
+          - "{{ fb_reader_ab_stance_ids }}"
+      changed_when: true
+
+    - name: Run steered Qwen and restore production afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before steered launch
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Stop previous Qwen steering fb-reader server if present
+          ansible.builtin.shell: |
+            set -euo pipefail
+            pid_file="{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file" 2>/dev/null || true)"
+              if [[ "$pid" =~ ^[0-9]+$ ]]; then
+                kill -TERM -- "-$pid" 2>/dev/null || true
+                kill -TERM "$pid" 2>/dev/null || true
+                sleep 2
+                kill -KILL -- "-$pid" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+              fi
+              rm -f "$pid_file"
+            fi
+          args:
+            executable: /bin/bash
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Launch steered Qwen experiment server
+          ansible.builtin.shell: |
+            set -euo pipefail
+            setsid env \
+              HF_HUB_ENABLE_HF_TRANSFER=1 \
+              HF_HUB_OFFLINE={{ (vllm_hf_hub_offline | default(true)) | ternary('1','0') }} \
+              VLLM_MARLIN_USE_ATOMIC_ADD={{ (vllm_marlin_use_atomic_add | default(true)) | ternary('1','0') }} \
+              VLLM_LOGGING_LEVEL=INFO \
+              {% for key, value in qwen_dir_steering_env.items() -%}
+              {{ key }}='{{ value }}' \
+              {% endfor -%}
+              {{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }} serve {{ vllm_model }} \
+                --host {{ vllm_host }} \
+                --port {{ vllm_port }} \
+                --served-model-name {{ vllm_served_name }} \
+                {% if vllm_language_model_only %}--language-model-only{% else %}--limit-mm-per-prompt '{"image":{{ vllm_max_images_per_prompt }}}'{% endif %} \
+                --max-model-len {{ vllm_max_model_len }} \
+                --max-num-batched-tokens {{ vllm_max_num_batched_tokens }} \
+                --max-num-seqs {{ vllm_max_num_seqs }} \
+                --gpu-memory-utilization {{ vllm_gpu_memory_utilization }} \
+                --load-format {{ vllm_load_format | default('fastsafetensors') }} \
+                --attention-backend {{ vllm_attention_backend | default('flash_attn') }} \
+                --enable-prefix-caching \
+                --enable-chunked-prefill \
+                --trust-remote-code \
+                {% if (vllm_quantization | default('')) | length > 0 %}--quantization {{ vllm_quantization }}{% endif %} \
+                --reasoning-parser {{ vllm_reasoning_parser | default('qwen3') }} \
+                --enable-auto-tool-choice \
+                --tool-call-parser {{ vllm_tool_call_parser | default('qwen3_coder') }} \
+                --default-chat-template-kwargs '{{ vllm_default_chat_template_kwargs | default("{\"preserve_thinking\":true}") }}' \
+                {% if (vllm_kv_cache_dtype | default('')) | length > 0 %}--kv-cache-dtype {{ vllm_kv_cache_dtype }}{% endif %} \
+                {% if (vllm_dtype | default('')) | length > 0 %}--dtype {{ vllm_dtype }}{% endif %} \
+                {% if (vllm_speculative_config | default('')) | length > 0 %}--speculative-config '{{ vllm_speculative_config }}'{% endif %} \
+                > "{{ fb_reader_ab_remote_output_dir }}/{{ qwen_dir_steering_label }}-server.log" 2>&1 &
+            echo $! > "{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+          args:
+            executable: /bin/bash
+          become: true
+          become_user: "{{ vllm_user }}"
+          changed_when: true
+
+        - name: Wait for steered Qwen API
+          ansible.builtin.uri:
+            url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: steered_models
+          retries: 180
+          delay: 5
+          until: steered_models.status == 200
+
+        - name: Run fb-reader replay against steered Qwen
+          ansible.builtin.command:
+            argv: "{{ [
+              'npx',
+              'tsx',
+              'scripts/tier-b-replay-corpus.ts',
+              '--corpus',
+              fb_reader_ab_corpus,
+              '--endpoint',
+              fb_reader_ab_base_url_controller,
+              '--model',
+              vllm_served_name,
+              '--out',
+              fb_reader_ab_local_output_dir + '/' + qwen_dir_steering_label + '.json',
+              '--timeout-ms',
+              fb_reader_ab_timeout_ms | string
+            ] + (['--limit', fb_reader_ab_limit | string] if fb_reader_ab_limit | string | length > 0 else [])
+              + (['--rebuild-body'] if fb_reader_ab_rebuild_body | bool else []) }}"
+            chdir: "{{ fb_reader_ab_fb_reader_path }}"
+          delegate_to: localhost
+          changed_when: true
+
+        - name: Capture steered Qwen metrics
+          ansible.builtin.uri:
+            url: "{{ fb_reader_ab_base_url_remote }}/metrics"
+            return_content: true
+            timeout: 10
+          register: steered_qwen_metrics
+          failed_when: false
+          changed_when: false
+
+        - name: Save steered Qwen metrics
+          ansible.builtin.copy:
+            dest: "{{ fb_reader_ab_remote_output_dir }}/{{ qwen_dir_steering_label }}-metrics.prom"
+            content: "{{ steered_qwen_metrics.content }}"
+            mode: "0644"
+          when: steered_qwen_metrics.status | default(0) == 200
+
+        - name: Run stance-v2 against steered Qwen
+          ansible.builtin.command:
+            argv:
+              - /usr/bin/python3
+              - "{{ fb_reader_ab_stance_runner }}"
+              - --base-url
+              - "{{ fb_reader_ab_base_url_remote }}"
+              - --model
+              - "{{ vllm_served_name }}"
+              - --label
+              - "{{ qwen_dir_steering_label }}"
+              - --corpus
+              - "{{ fb_reader_ab_stance_corpus }}"
+              - --output
+              - "{{ fb_reader_ab_remote_output_dir }}/{{ qwen_dir_steering_label }}-stance-v2.json"
+              - --timeout
+              - "{{ fb_reader_ab_stance_timeout | string }}"
+              - --max-tokens
+              - "{{ fb_reader_ab_stance_max_tokens | string }}"
+              - --ids
+              - "{{ fb_reader_ab_stance_ids }}"
+          changed_when: true
+
+      always:
+        - name: Stop steered Qwen experiment server
+          ansible.builtin.shell: |
+            set -euo pipefail
+            pid_file="{{ qwen_dir_steering_remote_dir }}/qwen-dir-steering.pid"
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file" 2>/dev/null || true)"
+              if [[ "$pid" =~ ^[0-9]+$ ]]; then
+                kill -TERM -- "-$pid" 2>/dev/null || true
+                kill -TERM "$pid" 2>/dev/null || true
+                sleep 2
+                kill -KILL -- "-$pid" 2>/dev/null || true
+                kill -KILL "$pid" 2>/dev/null || true
+              fi
+              rm -f "$pid_file"
+            fi
+          args:
+            executable: /bin/bash
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ fb_reader_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Fetch remote fb-reader steering artifacts
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ fb_reader_ab_local_output_dir }}/"
+        flat: true
+      loop:
+        - "{{ fb_reader_ab_remote_output_dir }}/manifest.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/{{ qwen_dir_steering_label }}-stance-v2.json"
+        - "{{ fb_reader_ab_remote_output_dir }}/{{ qwen_dir_steering_label }}-metrics.prom"
+      failed_when: false
+
+    - name: Show fb-reader steering output directories
+      ansible.builtin.debug:
+        msg:
+          - "Local fb-reader steering outputs: {{ fb_reader_ab_local_output_dir }}"
+          - "Remote fb-reader steering outputs: {{ fb_reader_ab_remote_output_dir }}"
