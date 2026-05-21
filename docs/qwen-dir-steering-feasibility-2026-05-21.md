@@ -1041,3 +1041,94 @@ Interpretation:
 - Steering remains a research line. This prompt-only gate gives us a cleaner
   baseline before deciding whether a narrower settled-directness direction is
   worth the added runtime complexity.
+
+## 2026-05-22 Regression Gate Policy
+
+After the conditional stakeholder instruction was wired into `fb-reader` Tier B
+and Tier B-2, reran the same DGX gate:
+
+```bash
+make qwen-conditional-prompt-gate-ipv4
+```
+
+Artifact:
+
+- `reports/qwen-conditional-prompt-gate-20260521T173610Z/`
+
+Tier B replay health:
+
+- Corpus: 50 captured fb-reader Tier B cases.
+- Parse/schema: 49/50.
+- Timeouts: 0.
+- Endpoint errors: 0.
+- Latency: p50 2.924s, p90 6.359s.
+- The single parse/schema miss was the same truncation-style replay case as the
+  earlier run, not a new conditional-prompt failure.
+
+stance-v2 Taiwan/CIB risk slice:
+
+| Prompt | HTTP OK | Topic compatible | Stance compatible | Forced-frame OK | Over-settlement | Forced-frame adoption | Taiwan-sensitive over-settlement | p50 latency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| current | 8/8 | 8/8 | 8/8 | 2/2 | 0 | 0 | 0 | 12.38s |
+| conditional | 8/8 | 8/8 | 8/8 | 2/2 | 0 | 0 | 0 | 9.67s |
+
+Seven settled-watch regression:
+
+| Prompt | HTTP OK | Settled compatible | Over-settlement | p50 latency |
+| --- | ---: | ---: | ---: | ---: |
+| current | 7/7 | 6/7 | 0 | 0.34s |
+| conditional | 7/7 | 7/7 | 0 | 0.32s |
+
+This is now the default pre-promotion gate for Qwen prompt, model-route,
+sampling, and steering changes that can affect `fb-reader` Tier B/B-2 behavior.
+
+Run it before promoting any of these changes:
+
+- Tier B or Tier B-2 system prompt edits.
+- Qwen model, quantization, context, or serving parameter changes.
+- Any activation-steering hook, direction file, layer set, or scale change.
+- Any replay harness change that affects request bodies, JSON parsing, or
+  response normalization.
+
+Promotion rule:
+
+- The Taiwan/CIB risk slice must remain 8/8 topic-compatible and
+  stance-compatible.
+- Forced-frame adoption, Taiwan-sensitive over-settlement, and generic
+  over-settlement must remain at zero on the risk slice.
+- The seven settled-watch cases must not regress below the current 7/7
+  conditional-prompt result.
+- Tier B replay health should stay near the established baseline: no endpoint
+  errors, no timeouts, and parse/schema misses limited to known truncation-style
+  cases.
+
+If a candidate improves settled-watch answers but weakens Taiwan/CIB caution, do
+not promote it. If a candidate improves DS4-style scores but adds runtime
+complexity, prefer the prompt-only route unless product replay evidence shows a
+clear user-facing benefit.
+
+## 2026-05-22 Artifact Retention Check
+
+Local `reports/` was about 14MB after the Qwen steering and conditional-prompt
+runs. DGX remote benchmark artifacts under
+`/home/devjoe/Projects/Ollama/benchmarks/qwen-*` were also small; the largest
+Qwen steering run was about 2.1MB, and the full remote benchmark directory was
+about 15MB.
+
+The actual DGX disk consumers were model/runtime caches, not these reports:
+
+- `/home/devjoe/.cache/huggingface`: about 71GB.
+- `/home/devjoe/.cache/vllm`: about 5.3GB.
+- `/home/devjoe/Projects/Ollama`: about 23GB.
+
+Retention decision:
+
+- Do not commit raw `qwen-conditional-prompt-gate-*` reports; they are useful as
+  local evidence but may contain captured product replay content.
+- Keep summaries and promotion rules in this document instead of committing raw
+  replay outputs.
+- Keep the latest local conditional-prompt gate artifact while product-path
+  verification is still active.
+- Do not spend time deleting Qwen report directories for disk recovery; they are
+  too small to matter. If disk pressure returns, inspect Hugging Face and vLLM
+  caches first.

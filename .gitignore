@@ -13,6 +13,11 @@ __pycache__/
 # Runtime-only generated corpora and local caches.
 tmp/
 
+# Local-only raw model experiment artifacts. Keep curated summaries in docs;
+# force-add a specific run only when it is intentionally safe to publish.
+reports/qwen-conditional-prompt-gate-*/
+reports/qwen-dir-steering-*/
+
 # Local-only overrides
 inventory.local.ini
 group_vars/local.yml
