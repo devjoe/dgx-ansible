@@ -14,6 +14,14 @@
     group: "{{ vllm_user }}"
     mode: "0755"
 
+- name: Ensure vLLM helper bin dir exists
+  ansible.builtin.file:
+    path: "{{ vllm_workdir }}/bin"
+    state: directory
+    owner: "{{ vllm_user }}"
+    group: "{{ vllm_user }}"
+    mode: "0755"
+
 - name: Ensure Python + venv + dev headers are installed
   ansible.builtin.apt:
     name:
@@ -25,7 +33,7 @@
       - build-essential
       - ninja-build
     state: present
-    update_cache: true
+    update_cache: "{{ vllm_apt_update_cache | default(false) }}"
 
 - name: Create vLLM venv if missing
   ansible.builtin.command:
@@ -45,8 +53,8 @@
   ansible.builtin.pip:
     name: "{{ vllm_pip_packages | default([('vllm>=' + vllm_version_floor), ('transformers>=' + vllm_transformers_floor)]) }}"
     virtualenv: "{{ vllm_workdir }}/.venv"
-    state: latest
-    extra_args: "--upgrade-strategy eager"
+    state: "{{ vllm_pip_state | default('present') }}"
+    extra_args: "{{ vllm_pip_extra_args | default('') }}"
   become_user: "{{ vllm_user }}"
   notify: restart vllm
 
@@ -67,11 +75,29 @@
     mode: "0644"
   notify: restart vllm
 
-- name: Open firewall for vLLM port (LAN only)
+- name: Render vLLM Private Network Access proxy script
+  ansible.builtin.template:
+    src: vllm-private-network-cors-proxy.py.j2
+    dest: "{{ vllm_workdir }}/bin/vllm-private-network-cors-proxy.py"
+    owner: "{{ vllm_user }}"
+    group: "{{ vllm_user }}"
+    mode: "0755"
+  when: vllm_private_network_cors_enabled | default(false)
+  notify: restart vllm pna proxy
+
+- name: Render vLLM Private Network Access proxy service
+  ansible.builtin.template:
+    src: vllm-pna-proxy.service.j2
+    dest: /etc/systemd/system/vllm-pna-proxy.service
+    mode: "0644"
+  when: vllm_private_network_cors_enabled | default(false)
+  notify: restart vllm pna proxy
+
+- name: Open firewall for vLLM public port (LAN only)
   community.general.ufw:
     rule: allow
     from_ip: "{{ lan_cidr }}"
-    port: "{{ vllm_port }}"
+    port: "{{ (vllm_private_network_cors_enabled | default(false)) | ternary(vllm_public_port, vllm_port) }}"
     proto: tcp
   when: ansible_facts.services['ufw.service'] is defined or
         (ansible_facts.packages['ufw'] is defined)
@@ -87,7 +113,24 @@
 - name: Apply pending restarts before health check
   ansible.builtin.meta: flush_handlers
 
-- name: Health check — vLLM /v1/models responds 200
+- name: Enable + start vLLM Private Network Access proxy
+  ansible.builtin.systemd:
+    name: vllm-pna-proxy
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: vllm_private_network_cors_enabled | default(false)
+
+- name: Disable vLLM Private Network Access proxy when not configured
+  ansible.builtin.systemd:
+    name: vllm-pna-proxy
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: not (vllm_private_network_cors_enabled | default(false))
+  failed_when: false
+
+- name: Health check — vLLM upstream /v1/models responds 200
   ansible.builtin.uri:
     url: "http://localhost:{{ vllm_port }}/v1/models"
     return_content: true
@@ -98,3 +141,39 @@
   retries: 180
   delay: 5
   until: vllm_health.status == 200
+
+- name: Health check — vLLM public /v1/models responds 200
+  ansible.builtin.uri:
+    url: "http://localhost:{{ (vllm_private_network_cors_enabled | default(false)) | ternary(vllm_public_port, vllm_port) }}/v1/models"
+    return_content: true
+    timeout: 3
+  register: vllm_public_health
+  retries: 30
+  delay: 2
+  until: vllm_public_health.status == 200
+
+- name: Health check — vLLM public endpoint accepts Chrome PNA preflight
+  ansible.builtin.uri:
+    url: "http://localhost:{{ vllm_public_port }}/v1/chat/completions"
+    method: OPTIONS
+    headers:
+      Origin: "chrome-extension://feed-clarity"
+      Access-Control-Request-Method: "POST"
+      Access-Control-Request-Headers: "content-type"
+      Access-Control-Request-Private-Network: "true"
+    status_code:
+      - 200
+      - 204
+    timeout: 3
+  register: vllm_pna_preflight
+  when: vllm_private_network_cors_enabled | default(false)
+  retries: 30
+  delay: 2
+  until: vllm_pna_preflight.status in [200, 204]
+
+- name: Assert vLLM public endpoint returns Access-Control-Allow-Private-Network
+  ansible.builtin.assert:
+    that:
+      - (vllm_pna_preflight.get('access_control_allow_private_network', '') | lower) == 'true'
+    fail_msg: "vLLM public endpoint did not return Access-Control-Allow-Private-Network: true"
+  when: vllm_private_network_cors_enabled | default(false)

@@ -265,7 +265,7 @@ status:  ## Show what Ollama currently has loaded
 
 status-vllm:  ## Show vLLM service state + /v1/models response
 	@ansible $(ANSIBLE_ARGS) dgx -m ansible.builtin.shell \
-		-a "systemctl is-active vllm; curl -s http://localhost:8000/v1/models | head -c 200" \
+		-a "systemctl is-active vllm; systemctl is-active vllm-pna-proxy; curl -s http://localhost:8000/v1/models | head -c 200" \
 		--one-line
 
 status-vllm-ipv4:  ## Show vLLM state through the direct IPv4 fallback inventory

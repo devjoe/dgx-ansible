@@ -1,0 +1,21 @@
+{{ ansible_managed | comment }}
+# Rendered from roles/vllm/templates/vllm-pna-proxy.service.j2.
+# Do not hand-edit — `make deploy` overwrites this file.
+
+[Unit]
+Description=vLLM Private Network Access CORS proxy
+After=network-online.target vllm.service
+Wants=network-online.target
+Requires=vllm.service
+
+[Service]
+Type=simple
+User={{ vllm_user }}
+Group={{ vllm_user }}
+WorkingDirectory={{ vllm_workdir }}
+ExecStart=/usr/bin/python3 {{ vllm_workdir }}/bin/vllm-private-network-cors-proxy.py --listen-host {{ vllm_public_host }} --listen-port {{ vllm_public_port }} --upstream-host {{ vllm_host }} --upstream-port {{ vllm_port }}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

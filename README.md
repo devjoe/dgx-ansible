@@ -34,15 +34,17 @@ to `~/Projects/local-inference/README.md`.
 | Endpoint | `gx10.local:11434` | `gx10.local:8000` |
 | Deployed model | `qwen3.6:35b-a3b` (MoE, ~36 tok/s) | `Intel/Qwen3.6-35B-A3B-int4-mixed-AutoRound` (+ DFlash, max_model_len=262144) |
 | Role | text classification fallback / quality backstop | multimodal Tier B classifier |
-| Service unit | `ollama` (systemd) | `vllm` (systemd) |
+| Service unit | `ollama` (systemd) | `vllm` + `vllm-pna-proxy` (systemd) |
 | Image handling | n/a | client-side prefetch in fb-reader → `data:image/jpeg;base64,...` |
 | Speed flags | `FLASH_ATTENTION=0`, `KV_CACHE_TYPE=fp16` | Marlin atomic add, `gpu-memory-utilization=0.85` |
 | Keep-alive | `OLLAMA_KEEP_ALIVE=24h` | n/a (vLLM holds the model in VRAM permanently) |
 
 The image-sanitizing proxy (`vllm-sanitizer`) was **removed 2026-04** in commit
 `ed898fd`. fb-reader now fetches + JPEG-re-encodes images client-side against
-the user's authenticated FB session. vLLM has been simplified to a single
-service bound directly on `0.0.0.0:8000`.
+the user's authenticated FB session. vLLM itself is bound to localhost, and
+`vllm-pna-proxy` exposes the stable LAN endpoint `gx10.local:8000` while
+answering Chrome Extension Private Network Access preflights with
+`Access-Control-Allow-Private-Network: true`.
 
 ## Open work / next steps
 
@@ -90,7 +92,7 @@ make ping                  # SSH + sudo reach
 make ping-ipv4             # bypass gx10.local/mDNS via Wi-Fi IPv4
 make deploy                # converge Ollama + vLLM to group_vars state
 make status                # GET /api/ps (Ollama loaded models)
-make status-vllm           # systemctl is-active vllm + GET /v1/models
+make status-vllm           # systemctl is-active vllm + public GET /v1/models
 make benchmark             # 3-run timed eval against Ollama → tok/s + JSON
 make benchmark-vllm        # text + data-URI image regression check
 make benchmark-vllm-perf   # vLLM perf matrix (prefill/decode × concurrency)
@@ -123,6 +125,32 @@ make os-post-smoke         # post-reboot NVIDIA/CUDA/PyTorch smoke test
 make os-restore            # restore serving + observability after update
 make os-validate           # vLLM regression check + one DGX canary
 ```
+
+## Chrome Extension private-network access
+
+fb-reader calls `http://gx10.local:8000/v1` from a Chrome Extension. Chrome
+sends a Private Network Access preflight before POSTing to a LAN endpoint, so
+the public `vllm-pna-proxy` must answer:
+
+```http
+Access-Control-Allow-Private-Network: true
+```
+
+Fast verification from the Mac:
+
+```bash
+curl -i -X OPTIONS http://gx10.local:8000/v1/chat/completions \
+  -H 'Origin: chrome-extension://feed-clarity' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type' \
+  -H 'Access-Control-Request-Private-Network: true'
+```
+
+If `curl`/Ansible can reach `gx10.local` or `192.168.99.2` but Chrome reports
+`net::ERR_ADDRESS_UNREACHABLE` even for `/v1/models`, the DGX endpoint is up and
+the remaining problem is the local Chrome session's LAN access. Check macOS
+Local Network permission for Google Chrome or restart the remote-debugger
+profile, then rerun the extension probe.
 
 ## vLLM speed spot-check (Mac-side)
 
@@ -258,8 +286,10 @@ for one-off load tests).
 6. Mirror Ansible-managed state into the operator workdir `~/Projects/Ollama/`
    on the DGX (override mirror, README, `benchmarks/` dir).
 7. Assert `GET /api/tags` returns 200 and contains every requested model.
-8. Provision the vLLM venv, render `/etc/systemd/system/vllm.service`, open
-   the LAN port, start the unit, wait for `/v1/models` to return 200.
+8. Provision the vLLM venv, render `/etc/systemd/system/vllm.service`, expose
+   the public `vllm-pna-proxy` on the LAN port, start both units, then wait for
+   upstream `/v1/models`, public `/v1/models`, and the Chrome Extension Private
+   Network Access preflight to pass.
 
 ## What `make benchmark` does (Ollama)
 

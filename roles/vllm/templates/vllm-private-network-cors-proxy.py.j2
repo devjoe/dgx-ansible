@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+{{ ansible_managed | comment }}
+"""Small reverse proxy for Chrome Extension Private Network Access preflights."""
+
+from __future__ import annotations
+
+import argparse
+from http import HTTPStatus
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import sys
+from typing import Iterable
+
+
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+
+
+DEFAULT_ALLOWED_HEADERS = "authorization, content-type, accept, x-requested-with"
+DEFAULT_ALLOWED_METHODS = "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT"
+
+
+def cors_origin(headers) -> str:
+    return headers.get("Origin") or "*"
+
+
+def cors_headers(headers) -> list[tuple[str, str]]:
+    request_headers = headers.get("Access-Control-Request-Headers")
+    return [
+        ("Access-Control-Allow-Origin", cors_origin(headers)),
+        ("Vary", "Origin, Access-Control-Request-Headers, Access-Control-Request-Method"),
+        ("Access-Control-Allow-Methods", DEFAULT_ALLOWED_METHODS),
+        ("Access-Control-Allow-Headers", request_headers or DEFAULT_ALLOWED_HEADERS),
+        ("Access-Control-Allow-Private-Network", "true"),
+        ("Access-Control-Max-Age", "600"),
+    ]
+
+
+class ProxyHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "vllm-pna-proxy/1.0"
+
+    def log_message(self, fmt: str, *args) -> None:
+        sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), fmt % args))
+
+    def _send_cors_headers(self) -> None:
+        for name, value in cors_headers(self.headers):
+            self.send_header(name, value)
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self._send_cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        self._proxy()
+
+    def do_HEAD(self) -> None:
+        self._proxy()
+
+    def do_POST(self) -> None:
+        self._proxy()
+
+    def do_PUT(self) -> None:
+        self._proxy()
+
+    def do_PATCH(self) -> None:
+        self._proxy()
+
+    def do_DELETE(self) -> None:
+        self._proxy()
+
+    def _request_body(self) -> bytes:
+        length = self.headers.get("Content-Length")
+        if not length:
+            return b""
+        return self.rfile.read(int(length))
+
+    def _forward_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        for name, value in self.headers.items():
+            lowered = name.lower()
+            if lowered in HOP_BY_HOP_HEADERS:
+                continue
+            if lowered == "host":
+                headers["Host"] = f"{self.server.upstream_host}:{self.server.upstream_port}"
+                continue
+            headers[name] = value
+        return headers
+
+    def _proxy(self) -> None:
+        conn = http.client.HTTPConnection(
+            self.server.upstream_host,
+            self.server.upstream_port,
+            timeout=self.server.upstream_timeout,
+        )
+        try:
+            body = self._request_body()
+            conn.request(self.command, self.path, body=body, headers=self._forward_headers())
+            upstream = conn.getresponse()
+            response_body = b"" if self.command == "HEAD" else upstream.read()
+
+            self.send_response(upstream.status, upstream.reason)
+            self._copy_response_headers(upstream.getheaders(), len(response_body))
+            self._send_cors_headers()
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(response_body)
+        except Exception as exc:
+            self.send_response(HTTPStatus.BAD_GATEWAY)
+            self._send_cors_headers()
+            payload = f"vLLM upstream proxy error: {exc}\n".encode("utf-8", "replace")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(payload)
+        finally:
+            conn.close()
+
+    def _copy_response_headers(self, headers: Iterable[tuple[str, str]], content_length: int) -> None:
+        seen_content_length = False
+        for name, value in headers:
+            lowered = name.lower()
+            if lowered in HOP_BY_HOP_HEADERS or lowered.startswith("access-control-"):
+                continue
+            if lowered == "content-length":
+                seen_content_length = True
+                self.send_header("Content-Length", str(content_length))
+                continue
+            self.send_header(name, value)
+        if not seen_content_length:
+            self.send_header("Content-Length", str(content_length))
+
+
+class ProxyServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, server_address, handler_class, upstream_host: str, upstream_port: int, upstream_timeout: int):
+        super().__init__(server_address, handler_class)
+        self.upstream_host = upstream_host
+        self.upstream_port = upstream_port
+        self.upstream_timeout = upstream_timeout
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--listen-host", required=True)
+    parser.add_argument("--listen-port", required=True, type=int)
+    parser.add_argument("--upstream-host", required=True)
+    parser.add_argument("--upstream-port", required=True, type=int)
+    parser.add_argument("--upstream-timeout", default=3600, type=int)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    server = ProxyServer(
+        (args.listen_host, args.listen_port),
+        ProxyHandler,
+        args.upstream_host,
+        args.upstream_port,
+        args.upstream_timeout,
+    )
+    print(
+        "vLLM PNA proxy listening on "
+        f"{args.listen_host}:{args.listen_port} -> {args.upstream_host}:{args.upstream_port}",
+        flush=True,
+    )
+    server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
