@@ -1,6 +1,6 @@
 # DGX Spark vLLM Model Selection (fb-reader + OpenCode)
 
-Last updated: 2026-05-21
+Last updated: 2026-05-28
 
 Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 
@@ -10,6 +10,97 @@ Goal: pick **one** vLLM-served model on DGX Spark (GB10, 128 GB UMA) that:
 
 This doc is **local-evidence driven**: all key decisions below are based on
 captured Tier B traffic + replayed benchmarks, not synthetic tok/s only.
+
+## 2026-05-28 NVFP4 Candidate Refresh
+
+External model/runtime work has moved since the original Qwen-vs-Gemma replay.
+The next DGX Spark Tier B candidates to test are:
+
+1. `RedHatAI/Qwen3.6-35B-A3B-NVFP4`
+   - Same Qwen3.6-35B-A3B family as the current default, so it is the lowest
+     model-behavior risk candidate.
+   - Hugging Face model card says it is weights+activations NVFP4, tested
+     against vLLM main, and deploys with `--reasoning-parser qwen3` plus
+     `--moe_backend flashinfer_cutlass`.
+   - The card also preserves MTP tensors, but the first repo gate keeps MTP
+     disabled until the plain official serving path is proven on our Tier B
+     replay.
+2. `nvidia/Gemma-4-26B-A4B-NVFP4`
+   - Official NVIDIA ModelOpt NVFP4 checkpoint for the Gemma 4 26B-A4B family.
+   - Model card lists vLLM support on Blackwell, text+image support, 256K
+     context, and over-140-language coverage.
+   - This is a different candidate from the earlier community/FP8-it Gemma
+     runs, so it gets a fresh replay gate before we reuse old Gemma conclusions.
+
+New automation:
+
+```bash
+make tierb-nvfp4-candidates-ipv4
+```
+
+The playbook:
+
+- checks selected candidate container images before touching production Qwen;
+- checks offline candidate model weights before touching production Qwen;
+- runs the current Ansible-managed Qwen DFlash service as the baseline;
+- stops Qwen only after the candidate preflight gates pass;
+- launches selected candidate containers, by default Qwen NVFP4 then Gemma
+  NVFP4;
+- runs the same 50-case `fb-reader` Tier B replay and Taiwan/CIB stance-v2
+  risk slice;
+- saves candidate logs/metrics;
+- restores both the Ansible-managed Qwen vLLM service and `vllm-pna-proxy` in
+  `always`.
+
+Candidate selection is configurable:
+
+```bash
+make tierb-nvfp4-candidates-ipv4 TIERB_NVFP4_CANDIDATE_IDS=qwen36-nvfp4
+make tierb-nvfp4-candidates-ipv4 TIERB_NVFP4_CANDIDATE_IDS=gemma4-nvfp4
+```
+
+Container images are intentionally configurable because the DGX Spark NVFP4
+runtime is moving quickly. Defaults follow the current public guidance:
+
+- Qwen NVFP4: `nvcr.io/nvidia/vllm:26.02-py3`
+- Gemma 4 NVFP4: `vllm/vllm-openai:gemma4-0505-cu130`
+
+External references checked on 2026-05-28:
+
+- `https://huggingface.co/RedHatAI/Qwen3.6-35B-A3B-NVFP4`
+- `https://huggingface.co/nvidia/Gemma-4-26B-A4B-NVFP4`
+- `https://build.nvidia.com/spark/vllm/instructions`
+
+Promotion rule:
+
+- Candidate must beat or closely match Qwen DFlash p50/p90 on the real Tier B
+  replay, not only synthetic tok/s.
+- Candidate must keep parse/schema output stable.
+- Candidate must pass the Taiwan/CIB risk slice without forced-frame adoption
+  or Taiwan-sensitive over-settlement.
+- If a candidate needs large downloads or a newer vLLM image, confirm DGX disk
+  pressure first; Hugging Face/vLLM caches, not replay reports, are the real
+  disk consumers.
+
+Execution status on 2026-05-28:
+
+- Current Qwen DFlash is restored and active after all failed candidate
+  attempts.
+- Qwen NVFP4 did not reach a valid benchmark run. The default NVIDIA container
+  image was not present locally and DGX outbound DNS failed for `nvcr.io`; using
+  the locally available `vllm/vllm-openai:latest-cu130` image then failed
+  because `RedHatAI/Qwen3.6-35B-A3B-NVFP4` was not cached and DNS also failed
+  for `huggingface.co`.
+- Gemma 4 NVFP4 did not reach a valid benchmark run. The model cache exists but
+  is incomplete: the snapshot has no `.safetensors` or `.bin` weights and the
+  cache contains incomplete blobs.
+- Safety fixes were added after these attempts: image preflight before stopping
+  Qwen, offline weight preflight for candidates that require local cache,
+  readiness must match the candidate served model name, and restore also starts
+  `vllm-pna-proxy`.
+- Therefore there is no new Qwen NVFP4 or Gemma 4 NVFP4 quality/latency
+  conclusion yet. The blocker is artifact/network availability, not a measured
+  model failure.
 
 ## Benchmark Method (Realistic Tier B Replay)
 

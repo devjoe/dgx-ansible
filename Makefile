@@ -13,6 +13,9 @@ FB_READER_AB_LIMIT ?=
 FB_READER_AB_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
 QWEN_CONDITIONAL_PROMPT_STANCE_IDS ?= $(STANCE_AB_RISK_IDS)
 QWEN_CONDITIONAL_PROMPT_WATCH_CORPUS ?= prompts/qwen_settled_watch_regression.json
+TIERB_NVFP4_CANDIDATE_IDS ?= qwen36-nvfp4,gemma4-nvfp4
+TIERB_NVFP4_QWEN_IMAGE ?= nvcr.io/nvidia/vllm:26.02-py3
+TIERB_NVFP4_GEMMA_IMAGE ?= vllm/vllm-openai:gemma4-0505-cu130
 NEWS_CONTEXT_STANCE_CORPUS ?= prompts/news_context_stance_corpus.json
 NEWS_FULLTEXT_STANCE_SPEC ?= prompts/news_fulltext_stance_sources.json
 NEWS_FULLTEXT_STANCE_CORPUS ?= tmp/news-fulltext-stance-corpus.json
@@ -47,7 +50,7 @@ GEMMA_MTP_PRHEAD_STANCE_PROFILES ?= prodctx-g1-u055,prodctx-g4-u055,fastctx-g4-u
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 qwen-conditional-prompt-gate qwen-conditional-prompt-gate-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-prompt2x2 qwen-dir-steering-prompt2x2-ipv4 qwen-dir-steering-prompt-conditional qwen-dir-steering-prompt-conditional-ipv4 qwen-dir-steering-sweep qwen-dir-steering-sweep-ipv4 qwen-dir-steering-fb-reader qwen-dir-steering-fb-reader-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
+.PHONY: help ping ping-ipv4 deploy benchmark benchmark-vllm benchmark-vllm-perf fb-reader-ab-prhead fb-reader-ab-prhead-ipv4 fb-reader-ab-prhead-full-stance fb-reader-ab-prhead-full-stance-ipv4 tierb-nvfp4-candidates tierb-nvfp4-candidates-ipv4 qwen-conditional-prompt-gate qwen-conditional-prompt-gate-ipv4 news-context-stance-ab-prhead news-context-stance-ab-prhead-ipv4 news-fulltext-stance-corpus news-fulltext-stance-ab-prhead news-fulltext-stance-ab-prhead-ipv4 news-fulltext-strict-stance-corpus news-fulltext-strict-stance-ab-prhead news-fulltext-strict-stance-ab-prhead-ipv4 news-fulltext-prepass-stance-corpus news-fulltext-prepass-stance-ab-prhead news-fulltext-prepass-stance-ab-prhead-ipv4 news-fulltext10-prepass-stance-corpus news-fulltext10-prepass-stance-ab-prhead news-fulltext10-prepass-stance-ab-prhead-ipv4 ds4-dir-steering-fetch ds4-dir-steering-corpus ds4-dir-steering-ab-prhead ds4-dir-steering-ab-prhead-ipv4 qwen-dir-steering-ds4 qwen-dir-steering-ds4-ipv4 qwen-dir-steering-hook-smoke qwen-dir-steering-hook-smoke-ipv4 qwen-dir-steering-prompt2x2 qwen-dir-steering-prompt2x2-ipv4 qwen-dir-steering-prompt-conditional qwen-dir-steering-prompt-conditional-ipv4 qwen-dir-steering-sweep qwen-dir-steering-sweep-ipv4 qwen-dir-steering-fb-reader qwen-dir-steering-fb-reader-ipv4 qwen-dir-steering-extraction-corpus qwen-dir-steering-extract qwen-dir-steering-extract-ipv4 gemma-mtp-endpoint-parity-prhead gemma-mtp-endpoint-parity-prhead-ipv4 gemma-mtp-fastbench gemma-mtp-fastbench-ipv4 gemma-mtp-fastbench-mm0 gemma-mtp-fastbench-mm0-ipv4 gemma-mtp-fastbench-prhead gemma-mtp-fastbench-prhead-ipv4 gemma-mtp-fastbench-mm0-prhead gemma-mtp-fastbench-mm0-prhead-ipv4 gemma-mtp-speed-targeted gemma-mtp-speed-targeted-ipv4 gemma-mtp-speed-targeted-prhead gemma-mtp-speed-targeted-prhead-ipv4 gemma-mtp-speed-matrix gemma-mtp-speed-matrix-ipv4 stance-ab stance-ab-ipv4 stance-ab-risk stance-ab-risk-ipv4 wifi-ipv4-only wifi-ipv4-only-ipv4 status status-vllm status-vllm-ipv4 unload models.yml lint install-deps deploy-obs status-obs canary-once os-preflight os-maint-stop os-post-smoke os-restore os-validate
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -84,6 +87,12 @@ fb-reader-ab-prhead-full-stance:  ## Run fb-reader A/B with the full 21-item sta
 
 fb-reader-ab-prhead-full-stance-ipv4:  ## Run full 21-item stance-v2 A/B through direct IPv4
 	$(MAKE) fb-reader-ab-prhead-full-stance INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
+tierb-nvfp4-candidates:  ## Run fb-reader replay + stance-v2 against Qwen/Gemma NVFP4 candidates
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/tierb-nvfp4-candidates.yml --extra-vars 'tierb_ab_corpus=$(FB_READER_AB_CORPUS) tierb_ab_limit=$(FB_READER_AB_LIMIT) tierb_ab_stance_ids=$(FB_READER_AB_STANCE_IDS) tierb_ab_candidate_ids=$(TIERB_NVFP4_CANDIDATE_IDS) tierb_ab_qwen_vllm_image=$(TIERB_NVFP4_QWEN_IMAGE) tierb_ab_gemma_vllm_image=$(TIERB_NVFP4_GEMMA_IMAGE)'
+
+tierb-nvfp4-candidates-ipv4:  ## Run NVFP4 candidate A/B through direct IPv4
+	$(MAKE) tierb-nvfp4-candidates INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
 qwen-conditional-prompt-gate:  ## Run prompt-only Qwen conditional gate + 7 settled-watch regressions
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-conditional-prompt-gate.yml --extra-vars 'qwen_conditional_prompt_fb_reader_corpus=$(FB_READER_AB_CORPUS) qwen_conditional_prompt_fb_reader_limit=$(FB_READER_AB_LIMIT) qwen_conditional_prompt_stance_ids=$(QWEN_CONDITIONAL_PROMPT_STANCE_IDS) qwen_conditional_prompt_watch_corpus_src=$(CURDIR)/$(QWEN_CONDITIONAL_PROMPT_WATCH_CORPUS)'
@@ -286,6 +295,7 @@ lint:  ## Syntax-check playbooks without touching the host
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-dir-steering-fb-reader.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/qwen-conditional-prompt-gate.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/fb-reader-ab-prhead.yml --syntax-check
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/tierb-nvfp4-candidates.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-ab.yml --syntax-check
 	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/deploy-observability.yml --syntax-check

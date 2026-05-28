@@ -88,14 +88,27 @@ def main() -> int:
     parser.add_argument("--gemma-replay", type=Path)
     parser.add_argument("--qwen-stance", type=Path)
     parser.add_argument("--gemma-stance", type=Path)
+    parser.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        metavar="KEY:REPLAY_JSON:STANCE_JSON",
+        help="Add an arbitrary model summary. May be repeated.",
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
-    output = {
-        "schema_version": 1,
-        "qwen_dflash": model_summary(args.qwen_replay, args.qwen_stance),
-        "gemma4_fp8_mtp": model_summary(args.gemma_replay, args.gemma_stance),
-    }
+    output = {"schema_version": 2}
+    if args.qwen_replay or args.qwen_stance:
+        output["qwen_dflash"] = model_summary(args.qwen_replay, args.qwen_stance)
+    if args.gemma_replay or args.gemma_stance:
+        output["gemma4_fp8_mtp"] = model_summary(args.gemma_replay, args.gemma_stance)
+    for item in args.model:
+        parts = item.split(":", 2)
+        if len(parts) != 3:
+            raise SystemExit(f"--model expects KEY:REPLAY_JSON:STANCE_JSON, got: {item}")
+        key, replay_path, stance_path = parts
+        output[key] = model_summary(Path(replay_path), Path(stance_path))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(output, ensure_ascii=False, indent=2))

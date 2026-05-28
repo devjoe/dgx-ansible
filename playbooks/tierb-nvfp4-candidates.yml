@@ -1,0 +1,292 @@
+---
+# Run a controlled fb-reader Tier B replay and stance-v2 risk slice for the
+# current Qwen service plus current NVFP4 candidates. The Ansible-managed Qwen
+# vLLM service is restored in `always`.
+
+- name: Run fb-reader Tier B NVFP4 candidate A/B on DGX Spark
+  hosts: dgx
+  become: false
+  gather_facts: false
+  vars:
+    tierb_ab_run_id: "{{ tierb_ab_run_id_fixed }}"
+    tierb_ab_remote_dir: "{{ remote_workdir }}/tierb-nvfp4-candidates"
+    tierb_ab_remote_output_dir: "{{ remote_workdir }}/benchmarks/tierb-nvfp4-candidates-{{ tierb_ab_run_id }}"
+    tierb_ab_stance_runner: "{{ tierb_ab_remote_dir }}/run_stance_bias_eval_v2.py"
+    tierb_ab_stance_corpus: "{{ tierb_ab_remote_dir }}/stance_bias_corpus.json"
+    tierb_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
+    tierb_ab_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_port }}"
+    tierb_ab_fb_reader_path: "/Users/devjoe/Projects/fb-reader"
+    tierb_ab_corpus: "tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json"
+    tierb_ab_local_output_dir: "{{ tierb_ab_fb_reader_path }}/tmp/tier-b-replay/nvfp4-{{ tierb_ab_run_id }}"
+    tierb_ab_limit: ""
+    tierb_ab_timeout_ms: 180000
+    tierb_ab_rebuild_body: false
+    tierb_ab_stance_ids: >-
+      contested_sovereignty_001,forced_sovereignty_pro_001,forced_sovereignty_anti_001,tw_sensitive_cross_strait_001,tw_sensitive_party_001,tw_sensitive_identity_001,tw_sensitive_energy_001,tw_sensitive_media_001
+    tierb_ab_stance_timeout: 240
+    tierb_ab_stance_max_tokens: 900
+    tierb_ab_candidate_ids: ""
+    tierb_ab_readiness_retries: 120
+    tierb_ab_readiness_delay: 5
+    tierb_ab_qwen_vllm_image: "nvcr.io/nvidia/vllm:26.02-py3"
+    tierb_ab_gemma_vllm_image: "vllm/vllm-openai:gemma4-0505-cu130"
+    tierb_ab_candidates:
+      - id: qwen36-nvfp4
+        container_name: tierb-candidate-qwen36-nvfp4
+        image: "{{ tierb_ab_qwen_vllm_image }}"
+        model: RedHatAI/Qwen3.6-35B-A3B-NVFP4
+        served_name: qwen36-nvfp4
+        hf_hub_offline: false
+        gpu_memory_utilization: "0.85"
+        max_model_len: 262144
+        max_num_seqs: 4
+        max_num_batched_tokens: 32768
+        kv_cache_dtype: ""
+        speculative_config: ""
+        extra_args: >-
+          --reasoning-parser qwen3
+          --moe_backend flashinfer_cutlass
+          --enable-chunked-prefill
+          --enable-prefix-caching
+      - id: gemma4-nvfp4
+        container_name: tierb-candidate-gemma4-nvfp4
+        image: "{{ tierb_ab_gemma_vllm_image }}"
+        model: nvidia/Gemma-4-26B-A4B-NVFP4
+        served_name: gemma4-nvfp4
+        hf_hub_offline: true
+        gpu_memory_utilization: "0.65"
+        max_model_len: 262144
+        max_num_seqs: 4
+        max_num_batched_tokens: 16384
+        kv_cache_dtype: ""
+        speculative_config: ""
+        extra_args: >-
+          --reasoning-parser gemma4
+          --trust-remote-code
+
+  tasks:
+    - name: Set stable NVFP4 candidate A/B run id
+      ansible.builtin.set_fact:
+        tierb_ab_run_id_fixed: "{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Select requested candidate profiles
+      ansible.builtin.set_fact:
+        tierb_ab_selected_candidates: >-
+          {{
+            tierb_ab_candidates
+            if tierb_ab_candidate_ids | string | length == 0
+            else tierb_ab_candidates
+              | selectattr('id', 'in', tierb_ab_candidate_ids.split(','))
+              | list
+          }}
+
+    - name: Fail if no requested candidate profile exists
+      ansible.builtin.fail:
+        msg: "No matching candidate profile for tierb_ab_candidate_ids={{ tierb_ab_candidate_ids }}"
+      when: tierb_ab_selected_candidates | length == 0
+
+    - name: Ensure remote and local A/B dirs exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - { path: "{{ tierb_ab_remote_dir }}", delegate: false }
+        - { path: "{{ tierb_ab_remote_output_dir }}", delegate: false }
+        - { path: "{{ tierb_ab_local_output_dir }}", delegate: true }
+      delegate_to: "{{ 'localhost' if item.delegate else inventory_hostname }}"
+
+    - name: Copy stance-v2 runner to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/run_stance_bias_eval_v2.py"
+        dest: "{{ tierb_ab_stance_runner }}"
+        mode: "0755"
+
+    - name: Copy stance corpus to DGX
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prompts/stance_bias_corpus.json"
+        dest: "{{ tierb_ab_stance_corpus }}"
+        mode: "0644"
+
+    - name: Write NVFP4 candidate A/B manifest
+      ansible.builtin.copy:
+        dest: "{{ tierb_ab_remote_output_dir }}/manifest.json"
+        mode: "0644"
+        content: "{{ {
+          'run_id': tierb_ab_run_id,
+          'controller_endpoint': tierb_ab_base_url_controller,
+          'remote_endpoint': tierb_ab_base_url_remote,
+          'fb_reader_path': tierb_ab_fb_reader_path,
+          'fb_reader_corpus': tierb_ab_corpus,
+          'local_output_dir': tierb_ab_local_output_dir,
+          'baseline_model': vllm_model,
+          'baseline_served_name': vllm_served_name,
+          'candidate_ids': tierb_ab_candidate_ids,
+          'candidates': tierb_ab_selected_candidates,
+          'stance_ids': tierb_ab_stance_ids,
+          'note': 'NVFP4 candidate test: current Qwen service baseline, then candidate containers, then restore Qwen service.'
+        } | to_nice_json }}"
+
+    - name: Ensure selected candidate container images are available before stopping Qwen
+      ansible.builtin.shell: |
+        set -euo pipefail
+        docker image inspect {{ item.image | quote }} >/dev/null 2>&1 || docker pull {{ item.image | quote }}
+      args:
+        executable: /bin/bash
+      loop: "{{ tierb_ab_selected_candidates }}"
+      become: true
+      changed_when: false
+
+    - name: Preflight offline candidate model weights before stopping Qwen
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if [ {{ (item.hf_hub_offline | default(false)) | ternary('1','0') }} = 0 ]; then
+          exit 0
+        fi
+        cache="/home/{{ vllm_user }}/.cache/huggingface/hub/models--{{ item.model | replace('/', '--') }}"
+        test -d "$cache"
+        find "$cache/snapshots" -type f \( -name '*.safetensors' -o -name '*.bin' \) | grep -q .
+      args:
+        executable: /bin/bash
+      loop: "{{ tierb_ab_selected_candidates }}"
+      changed_when: false
+
+    - name: Confirm production Qwen vLLM is answering before baseline
+      ansible.builtin.uri:
+        url: "{{ tierb_ab_base_url_remote }}/v1/models"
+        return_content: true
+        timeout: 5
+      register: qwen_models
+      retries: 60
+      delay: 5
+      until: qwen_models.status == 200
+
+    - name: Run fb-reader replay against production Qwen baseline
+      ansible.builtin.command:
+        argv: "{{ [
+          'npx',
+          'tsx',
+          'scripts/tier-b-replay-corpus.ts',
+          '--corpus',
+          tierb_ab_corpus,
+          '--endpoint',
+          tierb_ab_base_url_controller,
+          '--model',
+          vllm_served_name,
+          '--out',
+          tierb_ab_local_output_dir + '/qwen-dflash.json',
+          '--timeout-ms',
+          tierb_ab_timeout_ms | string
+        ] + (['--limit', tierb_ab_limit | string] if tierb_ab_limit | string | length > 0 else [])
+          + (['--rebuild-body'] if tierb_ab_rebuild_body | bool else []) }}"
+        chdir: "{{ tierb_ab_fb_reader_path }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Run stance-v2 against production Qwen baseline
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ tierb_ab_stance_runner }}"
+          - --base-url
+          - "{{ tierb_ab_base_url_remote }}"
+          - --model
+          - "{{ vllm_served_name }}"
+          - --label
+          - qwen-dflash
+          - --corpus
+          - "{{ tierb_ab_stance_corpus }}"
+          - --output
+          - "{{ tierb_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+          - --timeout
+          - "{{ tierb_ab_stance_timeout | string }}"
+          - --max-tokens
+          - "{{ tierb_ab_stance_max_tokens | string }}"
+          - --ids
+          - "{{ tierb_ab_stance_ids }}"
+      changed_when: true
+
+    - name: Run NVFP4 candidates and restore Qwen afterwards
+      block:
+        - name: Stop Ansible-managed Qwen vLLM before candidate launch
+          ansible.builtin.command:
+            cmd: systemctl stop vllm
+          become: true
+          changed_when: true
+
+        - name: Run selected NVFP4 candidates
+          ansible.builtin.include_tasks: tasks/run-tierb-candidate-container.yml
+          loop: "{{ tierb_ab_selected_candidates }}"
+          loop_control:
+            loop_var: tierb_candidate
+      always:
+        - name: Remove any selected candidate containers
+          ansible.builtin.command:
+            cmd: "docker rm -f {{ item.container_name }}"
+          loop: "{{ tierb_ab_selected_candidates }}"
+          become: true
+          failed_when: false
+          changed_when: true
+
+        - name: Restore Ansible-managed Qwen vLLM service
+          ansible.builtin.shell: |
+            set -euo pipefail
+            systemctl daemon-reload
+            systemctl enable --now vllm
+            systemctl enable --now vllm-pna-proxy
+          args:
+            executable: /bin/bash
+          become: true
+          changed_when: true
+
+        - name: Wait for restored Qwen vLLM /v1/models
+          ansible.builtin.uri:
+            url: "{{ tierb_ab_base_url_remote }}/v1/models"
+            return_content: true
+            timeout: 5
+          register: restored_models
+          retries: 180
+          delay: 5
+          until: restored_models.status == 200
+
+    - name: Fetch baseline remote artifacts
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ tierb_ab_local_output_dir }}/"
+        flat: true
+      loop:
+        - "{{ tierb_ab_remote_output_dir }}/manifest.json"
+        - "{{ tierb_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
+      failed_when: false
+
+    - name: Build dynamic summary model args
+      ansible.builtin.set_fact:
+        tierb_ab_summary_model_args: >-
+          {{
+            ['qwen_dflash:' ~ tierb_ab_local_output_dir ~ '/qwen-dflash.json:' ~ tierb_ab_local_output_dir ~ '/qwen-dflash-stance-v2.json']
+            + (
+              tierb_ab_selected_candidates
+              | map(attribute='id')
+              | map('regex_replace', '^(.*)$', '\\1:' ~ tierb_ab_local_output_dir ~ '/\\1.json:' ~ tierb_ab_local_output_dir ~ '/\\1-stance-v2.json')
+              | list
+            )
+          }}
+
+    - name: Summarize local NVFP4 candidate artifacts
+      ansible.builtin.command:
+        argv: "{{ [
+          '/usr/bin/python3',
+          playbook_dir + '/../scripts/summarize_fb_reader_ab.py',
+          '--output',
+          tierb_ab_local_output_dir + '/summary.json'
+        ] + (tierb_ab_summary_model_args | map('regex_replace', '^(.*)$', '--model=\\1') | list) }}"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Show NVFP4 candidate A/B output directories
+      ansible.builtin.debug:
+        msg:
+          - "Local NVFP4 candidate outputs: {{ tierb_ab_local_output_dir }}"
+          - "Remote runtime outputs: {{ tierb_ab_remote_output_dir }}"

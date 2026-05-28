@@ -191,6 +191,11 @@ upstream router has been unstable on IPv6:
 make wifi-ipv4-only-ipv4
 ```
 
+This also installs and enables `dgx-wifi-keepalive.timer`, which runs every
+5 minutes. The keepalive keeps `10Design2` on IPv4-only DNS
+(`8.8.8.8` / `8.8.4.4`) and reconnects the Wi-Fi only when `wlP9s9` loses its
+IPv4 address or IPv4 DNS checks for Hugging Face / NGC fail.
+
 Override `DGX_SSH_KEY` if the NVIDIA Sync key is stored outside the default
 macOS path.
 

@@ -6,6 +6,8 @@
   vars:
     dgx_wifi_connection: "10Design2"
     dgx_wifi_interface: "wlP9s9"
+    dgx_wifi_dns_servers: "8.8.8.8 8.8.4.4"
+    dgx_wifi_watchdog_interval: "5min"
   tasks:
     - name: Read Wi-Fi IPv6 settings
       ansible.builtin.command:
@@ -19,21 +21,51 @@
       register: wifi_ipv6_settings
       changed_when: false
 
-    - name: Disable IPv6 on outward Wi-Fi profile
+    - name: Read Wi-Fi IPv4 DNS settings
+      ansible.builtin.command:
+        argv:
+          - nmcli
+          - -g
+          - connection.autoconnect,ipv4.ignore-auto-dns,ipv4.dns
+          - con
+          - show
+          - "{{ dgx_wifi_connection }}"
+      register: wifi_ipv4_settings
+      changed_when: false
+
+    - name: Keep outward Wi-Fi profile on IPv4-only DNS with autoconnect
       ansible.builtin.command:
         argv:
           - nmcli
           - con
           - mod
           - "{{ dgx_wifi_connection }}"
+          - connection.autoconnect
+          - "yes"
+          - ipv4.ignore-auto-dns
+          - "yes"
+          - ipv4.dns
+          - "{{ dgx_wifi_dns_servers }}"
           - ipv6.method
           - disabled
           - ipv6.ignore-auto-dns
           - "yes"
       become: true
-      when: wifi_ipv6_settings.stdout_lines != ["disabled", "yes"]
+      changed_when: false
 
-    - name: Reconnect Wi-Fi when IPv6 settings changed
+    - name: Read current Wi-Fi IPv4 state
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -4
+          - -br
+          - addr
+          - show
+          - "{{ dgx_wifi_interface }}"
+      register: wifi_ipv4_pre_state
+      changed_when: false
+
+    - name: Reconnect Wi-Fi when IPv6 settings changed or IPv4 is missing
       ansible.builtin.shell: |
         set -euo pipefail
         nmcli con down "{{ dgx_wifi_connection }}" || true
@@ -41,7 +73,93 @@
       args:
         executable: /bin/bash
       become: true
-      when: wifi_ipv6_settings.stdout_lines != ["disabled", "yes"]
+      when: >
+        wifi_ipv6_settings.stdout_lines != ["disabled", "yes"]
+        or 'yes' not in wifi_ipv4_settings.stdout_lines
+        or dgx_wifi_dns_servers.split()[0] not in wifi_ipv4_settings.stdout
+        or ' UP ' not in wifi_ipv4_pre_state.stdout
+        or '/' not in wifi_ipv4_pre_state.stdout
+
+    - name: Install DGX outward Wi-Fi keepalive script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/dgx-wifi-keepalive
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          connection="{{ dgx_wifi_connection }}"
+          interface="{{ dgx_wifi_interface }}"
+          dns_servers="{{ dgx_wifi_dns_servers }}"
+
+          nmcli con mod "$connection" \
+            connection.autoconnect yes \
+            ipv4.ignore-auto-dns yes \
+            ipv4.dns "$dns_servers" \
+            ipv6.method disabled \
+            ipv6.ignore-auto-dns yes
+
+          has_ipv4() {
+            ip -4 -br addr show "$interface" | grep -q ' UP .*/'
+          }
+
+          dns_ok() {
+            timeout 5 getent ahostsv4 huggingface.co >/dev/null &&
+              timeout 5 getent ahostsv4 nvcr.io >/dev/null
+          }
+
+          if has_ipv4 && dns_ok; then
+            exit 0
+          fi
+
+          logger -t dgx-wifi-keepalive "reconnecting $connection: missing IPv4 or IPv4 DNS failed"
+          nmcli con down "$connection" || true
+          nmcli con up "$connection"
+
+          has_ipv4
+          dns_ok
+      become: true
+
+    - name: Install DGX outward Wi-Fi keepalive service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dgx-wifi-keepalive.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Keep DGX outward Wi-Fi connected over IPv4
+          After=NetworkManager.service
+          Wants=NetworkManager.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/dgx-wifi-keepalive
+      become: true
+
+    - name: Install DGX outward Wi-Fi keepalive timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dgx-wifi-keepalive.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run DGX outward Wi-Fi keepalive periodically
+
+          [Timer]
+          OnBootSec=1min
+          OnUnitActiveSec={{ dgx_wifi_watchdog_interval }}
+          AccuracySec=30s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      become: true
+
+    - name: Enable DGX outward Wi-Fi keepalive timer
+      ansible.builtin.systemd:
+        name: dgx-wifi-keepalive.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      become: true
 
     - name: Verify Wi-Fi has IPv4 address
       ansible.builtin.command:
@@ -71,9 +189,23 @@
       changed_when: false
       failed_when: wifi_ipv6_global.stdout | length > 0
 
+    - name: Verify outward IPv4 DNS works
+      ansible.builtin.command:
+        argv:
+          - getent
+          - ahostsv4
+          - "{{ item }}"
+      loop:
+        - huggingface.co
+        - nvcr.io
+      register: wifi_dns_checks
+      changed_when: false
+
     - name: Show Wi-Fi network state
       ansible.builtin.debug:
         msg:
           connection: "{{ dgx_wifi_connection }}"
           interface: "{{ wifi_ipv4_state.stdout }}"
           ipv6_global: "{{ wifi_ipv6_global.stdout | default('') }}"
+          dns: "{{ dgx_wifi_dns_servers }}"
+          watchdog: "dgx-wifi-keepalive.timer every {{ dgx_wifi_watchdog_interval }}"

@@ -1,0 +1,170 @@
+---
+- name: Remove previous {{ tierb_candidate.id }} container if present
+  ansible.builtin.command:
+    cmd: "docker rm -f {{ tierb_candidate.container_name }}"
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Launch {{ tierb_candidate.id }} vLLM container
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker run -d \
+      --name {{ tierb_candidate.container_name }} \
+      --gpus all \
+      --ipc=host \
+      --network host \
+      -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+      -e HF_HUB_OFFLINE={{ (tierb_candidate.hf_hub_offline | default(false)) | ternary('1','0') }} \
+      {% for key, value in (tierb_candidate.env | default({})).items() -%}
+      -e {{ key }}={{ value | quote }} \
+      {% endfor -%}
+      -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
+      -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
+      {{ tierb_candidate.image }} \
+      {{ tierb_candidate.model }} \
+      --host 0.0.0.0 \
+      --port {{ vllm_port }} \
+      --served-model-name {{ tierb_candidate.served_name }} \
+      --gpu-memory-utilization {{ tierb_candidate.gpu_memory_utilization }} \
+      --max-model-len {{ tierb_candidate.max_model_len }} \
+      --max-num-seqs {{ tierb_candidate.max_num_seqs }} \
+      --max-num-batched-tokens {{ tierb_candidate.max_num_batched_tokens }} \
+      --tensor-parallel-size 1 \
+      {% if tierb_candidate.kv_cache_dtype | default('') | length > 0 -%}
+      --kv-cache-dtype {{ tierb_candidate.kv_cache_dtype }} \
+      {% endif -%}
+      {% if tierb_candidate.speculative_config | default('') | length > 0 -%}
+      --speculative-config '{{ tierb_candidate.speculative_config }}' \
+      {% endif -%}
+      {{ tierb_candidate.extra_args | default('') }}
+  args:
+    executable: /bin/bash
+  become: true
+  changed_when: true
+
+- name: Wait for {{ tierb_candidate.id }} readiness with logs on failure
+  block:
+    - name: Wait for {{ tierb_candidate.id }} /v1/models served name
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for _ in $(seq 1 {{ tierb_candidate.readiness_retries | default(tierb_ab_readiness_retries) }}); do
+          if curl --max-time 5 -sf {{ tierb_ab_base_url_remote }}/v1/models | grep -q {{ tierb_candidate.served_name | quote }}; then
+            exit 0
+          fi
+          if ! docker ps --filter name={{ tierb_candidate.container_name }} --filter status=running -q | grep -q .; then
+            docker logs --tail 1000 {{ tierb_candidate.container_name }} > {{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log 2>&1 || true
+            exit 1
+          fi
+          sleep {{ tierb_candidate.readiness_delay | default(tierb_ab_readiness_delay) }}
+        done
+        docker logs --tail 1000 {{ tierb_candidate.container_name }} > {{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log 2>&1 || true
+        exit 1
+      args:
+        executable: /bin/bash
+      become: true
+      changed_when: false
+  rescue:
+    - name: Save {{ tierb_candidate.id }} readiness failure logs
+      ansible.builtin.shell: |
+        docker logs --tail 1000 {{ tierb_candidate.container_name }} > {{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log 2>&1 || true
+      become: true
+      failed_when: false
+      changed_when: false
+
+    - name: Fetch {{ tierb_candidate.id }} readiness failure logs
+      ansible.builtin.fetch:
+        src: "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log"
+        dest: "{{ tierb_ab_local_output_dir }}/"
+        flat: true
+      failed_when: false
+
+    - name: Fail with {{ tierb_candidate.id }} readiness context
+      ansible.builtin.fail:
+        msg: "{{ tierb_candidate.id }} did not become ready. Log: {{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log"
+
+- name: Run fb-reader replay against {{ tierb_candidate.id }}
+  ansible.builtin.command:
+    argv: "{{ [
+      'npx',
+      'tsx',
+      'scripts/tier-b-replay-corpus.ts',
+      '--corpus',
+      tierb_ab_corpus,
+      '--endpoint',
+      tierb_ab_base_url_controller,
+      '--model',
+      tierb_candidate.served_name,
+      '--out',
+      tierb_ab_local_output_dir + '/' + tierb_candidate.id + '.json',
+      '--timeout-ms',
+      tierb_ab_timeout_ms | string
+    ] + (['--limit', tierb_ab_limit | string] if tierb_ab_limit | string | length > 0 else [])
+      + (['--rebuild-body'] if tierb_ab_rebuild_body | bool else []) }}"
+    chdir: "{{ tierb_ab_fb_reader_path }}"
+  delegate_to: localhost
+  changed_when: true
+
+- name: Capture {{ tierb_candidate.id }} metrics
+  ansible.builtin.uri:
+    url: "{{ tierb_ab_base_url_remote }}/metrics"
+    return_content: true
+    timeout: 10
+  register: tierb_candidate_metrics
+  failed_when: false
+  changed_when: false
+
+- name: Save {{ tierb_candidate.id }} metrics
+  ansible.builtin.copy:
+    dest: "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-metrics.prom"
+    content: "{{ tierb_candidate_metrics.content }}"
+    mode: "0644"
+  when: tierb_candidate_metrics.status | default(0) == 200
+
+- name: Run stance-v2 against {{ tierb_candidate.id }}
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - "{{ tierb_ab_stance_runner }}"
+      - --base-url
+      - "{{ tierb_ab_base_url_remote }}"
+      - --model
+      - "{{ tierb_candidate.served_name }}"
+      - --label
+      - "{{ tierb_candidate.id }}"
+      - --corpus
+      - "{{ tierb_ab_stance_corpus }}"
+      - --output
+      - "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-stance-v2.json"
+      - --timeout
+      - "{{ tierb_ab_stance_timeout | string }}"
+      - --max-tokens
+      - "{{ tierb_ab_stance_max_tokens | string }}"
+      - --ids
+      - "{{ tierb_ab_stance_ids }}"
+  changed_when: true
+
+- name: Save {{ tierb_candidate.id }} container logs
+  ansible.builtin.shell: |
+    docker logs --tail 1000 {{ tierb_candidate.container_name }} > {{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log 2>&1 || true
+  become: true
+  failed_when: false
+  changed_when: false
+
+- name: Stop {{ tierb_candidate.id }} container
+  ansible.builtin.command:
+    cmd: "docker rm -f {{ tierb_candidate.container_name }}"
+  become: true
+  failed_when: false
+  changed_when: true
+
+- name: Fetch {{ tierb_candidate.id }} remote artifacts
+  ansible.builtin.fetch:
+    src: "{{ item }}"
+    dest: "{{ tierb_ab_local_output_dir }}/"
+    flat: true
+  loop:
+    - "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-stance-v2.json"
+    - "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-metrics.prom"
+    - "{{ tierb_ab_remote_output_dir }}/{{ tierb_candidate.id }}-container.log"
+  failed_when: false
