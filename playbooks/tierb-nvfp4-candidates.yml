@@ -58,6 +58,7 @@
         served_name: gemma4-nvfp4
         hf_hub_offline: true
         gpu_memory_utilization: "0.65"
+        readiness_retries: 720
         max_model_len: 262144
         max_num_seqs: 4
         max_num_batched_tokens: 16384

@@ -93,9 +93,9 @@ Execution status on 2026-05-28:
   must match the candidate served model name, restore starts both `vllm` and
   `vllm-pna-proxy`, and controller-side replay uses the public proxy port
   rather than the private vLLM port.
-- Gemma 4 NVFP4 still has no valid benchmark run in this refresh. The local
-  model cache is incomplete: the snapshot has no `.safetensors` or `.bin`
-  weights and the cache contains incomplete blobs.
+- Gemma 4 NVFP4 still has no valid benchmark run in this refresh. The earlier
+  incomplete cache was repaired by a successful download, but the runtime now
+  fails during ModelOpt NVFP4 MoE backend initialization before `/v1/models`.
 
 Qwen NVFP4 runtime notes:
 
@@ -143,6 +143,23 @@ Interpretation:
 - Keep Qwen DFlash as the shared default. Keep Qwen NVFP4 as a runnable
   compatibility candidate, not a promotion candidate, unless a future vLLM /
   kernel update closes the latency gap.
+
+Gemma 4 NVFP4 runtime notes:
+
+- Run ids: `20260528T121250Z` and `20260528T123057Z`
+- The first Gemma run downloaded the full `nvidia/Gemma-4-26B-A4B-NVFP4`
+  checkpoint: 17.50 GiB, two `.safetensors` shards, download time about
+  473 seconds. After that, the profile can return to `hf_hub_offline: true`
+  for this DGX cache.
+- Auto backend selection chose `MARLIN` for NVFP4 MoE. Engine initialization
+  failed in `prepare_nvfp4_moe_layer_for_marlin` /
+  `_nvfp4_compute_scale_factor` with `torch.AcceleratorError: CUDA error:
+  operation not permitted`.
+- A follow-up smoke run forced `VLLM_USE_FLASHINFER_MOE_FP4=1`. That failed
+  earlier and more cleanly: vLLM reported that no FlashInfer NVFP4 MoE backend
+  supports this Gemma configuration.
+- Therefore Gemma 4 NVFP4 is blocked at runtime on this DGX Spark stack. This
+  is not a quality or latency result; the server never reached `/v1/models`.
 
 ## Benchmark Method (Realistic Tier B Replay)
 
