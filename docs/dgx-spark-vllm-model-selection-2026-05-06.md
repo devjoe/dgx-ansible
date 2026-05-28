@@ -62,7 +62,7 @@ make tierb-nvfp4-candidates-ipv4 TIERB_NVFP4_CANDIDATE_IDS=gemma4-nvfp4
 Container images are intentionally configurable because the DGX Spark NVFP4
 runtime is moving quickly. Defaults follow the current public guidance:
 
-- Qwen NVFP4: `nvcr.io/nvidia/vllm:26.02-py3`
+- Qwen NVFP4: `vllm/vllm-openai:latest-cu130`
 - Gemma 4 NVFP4: `vllm/vllm-openai:gemma4-0505-cu130`
 
 External references checked on 2026-05-28:
@@ -84,23 +84,65 @@ Promotion rule:
 
 Execution status on 2026-05-28:
 
-- Current Qwen DFlash is restored and active after all failed candidate
-  attempts.
-- Qwen NVFP4 did not reach a valid benchmark run. The default NVIDIA container
-  image was not present locally and DGX outbound DNS failed for `nvcr.io`; using
-  the locally available `vllm/vllm-openai:latest-cu130` image then failed
-  because `RedHatAI/Qwen3.6-35B-A3B-NVFP4` was not cached and DNS also failed
-  for `huggingface.co`.
-- Gemma 4 NVFP4 did not reach a valid benchmark run. The model cache exists but
-  is incomplete: the snapshot has no `.safetensors` or `.bin` weights and the
-  cache contains incomplete blobs.
-- Safety fixes were added after these attempts: image preflight before stopping
-  Qwen, offline weight preflight for candidates that require local cache,
-  readiness must match the candidate served model name, and restore also starts
-  `vllm-pna-proxy`.
-- Therefore there is no new Qwen NVFP4 or Gemma 4 NVFP4 quality/latency
-  conclusion yet. The blocker is artifact/network availability, not a measured
-  model failure.
+- Current Qwen DFlash is restored and active after all candidate attempts.
+- DGX outward Wi-Fi was repaired and pinned to IPv4-only before the successful
+  Qwen NVFP4 run. The keepalive timer is enabled so Hugging Face / NGC pulls
+  are less likely to stall on the unstable upstream IPv6 path.
+- Safety fixes are now in the playbook: image preflight before stopping Qwen,
+  offline weight preflight for candidates that require local cache, readiness
+  must match the candidate served model name, restore starts both `vllm` and
+  `vllm-pna-proxy`, and controller-side replay uses the public proxy port
+  rather than the private vLLM port.
+- Gemma 4 NVFP4 still has no valid benchmark run in this refresh. The local
+  model cache is incomplete: the snapshot has no `.safetensors` or `.bin`
+  weights and the cache contains incomplete blobs.
+
+Qwen NVFP4 runtime notes:
+
+- `nvcr.io/nvidia/vllm:26.02-py3` pulls successfully, but is not a valid Qwen
+  NVFP4 runtime here: it needs an explicit `vllm serve` command, lacks
+  `hf_transfer` despite the previous fast-transfer env, does not accept the
+  model-card `--moe_backend` flag, and its Transformers build does not
+  recognize `qwen3_5_moe`.
+- `vllm/vllm-openai:latest-cu130` does recognize the model and starts loading
+  it with vLLM `0.20.0`. Logs show `Qwen3_5MoeForConditionalGeneration`,
+  `FlashInferCutlassNvFp4LinearKernel`, and automatic
+  `FLASHINFER_CUTLASS` NVFP4 MoE backend selection.
+- The first cold run on `latest-cu130` timed out at the original 10-minute
+  readiness window while downloading/loading weights. The Qwen candidate now
+  uses a longer cold-start readiness window so cached/continued downloads can
+  complete before the playbook restores production Qwen.
+- The next run completed the 23.32 GiB checkpoint download, then failed during
+  multimodal profiling with a CUDA/cuBLAS error in the Qwen3-VL vision patch
+  embed path. Adding `--skip-mm-profiling` and
+  `--limit-mm-per-prompt '{"image":4}'` let the server become ready and finish
+  the full replay.
+
+Validated Qwen NVFP4 result:
+
+- Run id: `20260528T114446Z`
+- Local artifacts:
+  `/Users/devjoe/Projects/fb-reader/tmp/tier-b-replay/nvfp4-20260528T114446Z/`
+- Remote artifacts:
+  `/home/devjoe/Projects/Ollama/benchmarks/tierb-nvfp4-candidates-20260528T114446Z/`
+
+| Model | Replay schema | All p50 | All p90 | Image p50 | Text p50 | Replay tok/s p50 | stance-v2 risk flags |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen DFlash baseline | 50/50 | 2.86s | 5.36s | 3.11s | 1.94s | 94.54 | 0 |
+| Qwen3.6 NVFP4 | 50/50 | 6.80s | 10.13s | 7.09s | 5.06s | 39.82 | 0 |
+
+Interpretation:
+
+- `RedHatAI/Qwen3.6-35B-A3B-NVFP4` is now proven runnable on DGX Spark with
+  `vllm/vllm-openai:latest-cu130`, vLLM `0.20.0`, and the multimodal profiling
+  skip described above.
+- It is not a better Tier B default than the current Intel AutoRound INT4 +
+  DFlash service. On the real 50-case `fb-reader` corpus it is about 2x slower
+  at p50/p90 while preserving schema stability and showing no new Taiwan/CIB
+  stance-v2 risk flags in the eight-case slice.
+- Keep Qwen DFlash as the shared default. Keep Qwen NVFP4 as a runnable
+  compatibility candidate, not a promotion candidate, unless a future vLLM /
+  kernel update closes the latency gap.
 
 ## Benchmark Method (Realistic Tier B Replay)
 

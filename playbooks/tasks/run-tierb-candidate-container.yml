@@ -14,7 +14,7 @@
       --gpus all \
       --ipc=host \
       --network host \
-      -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+      -e HF_HUB_ENABLE_HF_TRANSFER={{ (tierb_candidate.hf_transfer | default(false)) | ternary('1','0') }} \
       -e HF_HUB_OFFLINE={{ (tierb_candidate.hf_hub_offline | default(false)) | ternary('1','0') }} \
       {% for key, value in (tierb_candidate.env | default({})).items() -%}
       -e {{ key }}={{ value | quote }} \
@@ -22,6 +22,7 @@
       -v /home/{{ vllm_user }}/.cache/huggingface:/root/.cache/huggingface \
       -v /home/{{ vllm_user }}/.cache/vllm:/root/.cache/vllm \
       {{ tierb_candidate.image }} \
+      {{ tierb_candidate.command_prefix | default('') }} \
       {{ tierb_candidate.model }} \
       --host 0.0.0.0 \
       --port {{ vllm_port }} \

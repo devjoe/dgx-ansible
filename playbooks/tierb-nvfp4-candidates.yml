@@ -14,7 +14,7 @@
     tierb_ab_stance_runner: "{{ tierb_ab_remote_dir }}/run_stance_bias_eval_v2.py"
     tierb_ab_stance_corpus: "{{ tierb_ab_remote_dir }}/stance_bias_corpus.json"
     tierb_ab_base_url_remote: "http://localhost:{{ vllm_port }}"
-    tierb_ab_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_port }}"
+    tierb_ab_base_url_controller: "http://{{ inventory_hostname }}:{{ vllm_public_port }}"
     tierb_ab_fb_reader_path: "/Users/devjoe/Projects/fb-reader"
     tierb_ab_corpus: "tmp/tier-b-corpus-2026-05-06T07-53-23-804Z/tier-b-cases.json"
     tierb_ab_local_output_dir: "{{ tierb_ab_fb_reader_path }}/tmp/tier-b-replay/nvfp4-{{ tierb_ab_run_id }}"
@@ -36,8 +36,10 @@
         image: "{{ tierb_ab_qwen_vllm_image }}"
         model: RedHatAI/Qwen3.6-35B-A3B-NVFP4
         served_name: qwen36-nvfp4
+        command_prefix: "{{ 'vllm serve' if tierb_ab_qwen_vllm_image is match('^nvcr.io/nvidia/vllm:') else '' }}"
         hf_hub_offline: false
         gpu_memory_utilization: "0.85"
+        readiness_retries: 720
         max_model_len: 262144
         max_num_seqs: 4
         max_num_batched_tokens: 32768
@@ -45,9 +47,10 @@
         speculative_config: ""
         extra_args: >-
           --reasoning-parser qwen3
-          --moe_backend flashinfer_cutlass
           --enable-chunked-prefill
           --enable-prefix-caching
+          --limit-mm-per-prompt '{"image":4}'
+          --skip-mm-profiling
       - id: gemma4-nvfp4
         container_name: tierb-candidate-gemma4-nvfp4
         image: "{{ tierb_ab_gemma_vllm_image }}"
@@ -261,18 +264,17 @@
         - "{{ tierb_ab_remote_output_dir }}/qwen-dflash-stance-v2.json"
       failed_when: false
 
-    - name: Build dynamic summary model args
+    - name: Initialize dynamic summary model args
+      ansible.builtin.set_fact:
+        tierb_ab_summary_model_args:
+          - "qwen_dflash:{{ tierb_ab_local_output_dir }}/qwen-dflash.json:{{ tierb_ab_local_output_dir }}/qwen-dflash-stance-v2.json"
+
+    - name: Add candidate summary model args
       ansible.builtin.set_fact:
         tierb_ab_summary_model_args: >-
-          {{
-            ['qwen_dflash:' ~ tierb_ab_local_output_dir ~ '/qwen-dflash.json:' ~ tierb_ab_local_output_dir ~ '/qwen-dflash-stance-v2.json']
-            + (
-              tierb_ab_selected_candidates
-              | map(attribute='id')
-              | map('regex_replace', '^(.*)$', '\\1:' ~ tierb_ab_local_output_dir ~ '/\\1.json:' ~ tierb_ab_local_output_dir ~ '/\\1-stance-v2.json')
-              | list
-            )
-          }}
+          {{ tierb_ab_summary_model_args
+            + [item.id ~ ':' ~ tierb_ab_local_output_dir ~ '/' ~ item.id ~ '.json:' ~ tierb_ab_local_output_dir ~ '/' ~ item.id ~ '-stance-v2.json'] }}
+      loop: "{{ tierb_ab_selected_candidates }}"
 
     - name: Summarize local NVFP4 candidate artifacts
       ansible.builtin.command:
