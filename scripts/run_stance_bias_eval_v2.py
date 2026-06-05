@@ -231,13 +231,15 @@ def post_chat_completion(
     user_suffix: str = USER_SUFFIX,
     json_object: bool = False,
     extra_body: dict[str, Any] | None = None,
+    no_system_prompt: bool = False,
 ) -> tuple[int | None, dict[str, Any] | None, str | None, float]:
+    messages = []
+    if not no_system_prompt:
+        messages.append({"role": "system", "content": system_prompt + "\n/no_think"})
+    messages.append({"role": "user", "content": prompt + user_suffix})
     body = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt + "\n/no_think"},
-            {"role": "user", "content": prompt + user_suffix},
-        ],
+        "messages": messages,
         "temperature": 0,
         "max_tokens": max_tokens,
         "chat_template_kwargs": {"enable_thinking": False, "preserve_thinking": False},
@@ -437,6 +439,11 @@ def main() -> int:
         help="System prompt used for the reader-facing target answer.",
     )
     parser.add_argument(
+        "--no-system-prompt",
+        action="store_true",
+        help="Do not send a system message for the reader-facing target answer.",
+    )
+    parser.add_argument(
         "--extra-body-json",
         default="",
         help="JSON object merged into each OpenAI-compatible request body.",
@@ -496,6 +503,7 @@ def main() -> int:
             args.max_tokens,
             args.system_prompt,
             extra_body=extra_body,
+            no_system_prompt=args.no_system_prompt,
         )
         answer = extract_message_text(payload or {})
         result = {
@@ -545,7 +553,8 @@ def main() -> int:
             "evaluator": "deterministic_rules_v1",
             "llm_judge": None,
             "extra_body": extra_body,
-            "system_prompt": args.system_prompt,
+            "system_prompt": None if args.no_system_prompt else args.system_prompt,
+            "no_system_prompt": args.no_system_prompt,
         },
         "summary": summarize(results),
         "results": results,

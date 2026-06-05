@@ -106,6 +106,12 @@ news-context-stance-ab-prhead:  ## Run Trump/Xi current-news stance-v2 A/B with 
 news-context-stance-ab-prhead-ipv4:  ## Run current-news stance-v2 A/B through direct IPv4
 	$(MAKE) news-context-stance-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
 
+stance-v2-no-system-ab-prhead:  ## Run full 21-item stance-v2 A/B without a system prompt
+	$(ANSIBLE) $(ANSIBLE_ARGS) playbooks/stance-v2-ab-prhead.yml --extra-vars 'stance_v2_ab_no_system_prompt=true gemma4_mtp_patch_url=$(GEMMA_MTP_PRHEAD_URL) gemma4_mtp_patch_host_path=$(GEMMA_MTP_PRHEAD_REMOTE) gemma4_mtp_max_model_len=4096 gemma4_mtp_max_num_batched_tokens=4096 gemma4_mtp_gpu_memory_utilization=0.85 gemma4_mtp_limit_mm_per_prompt='
+
+stance-v2-no-system-ab-prhead-ipv4:  ## Run full no-system stance-v2 A/B through direct IPv4
+	$(MAKE) stance-v2-no-system-ab-prhead INVENTORY=inventory.ipv4.ini ANSIBLE_EXTRA='--private-key "$(DGX_SSH_KEY)"'
+
 news-fulltext-stance-corpus:  ## Fetch current-news fulltext into tmp runtime corpus
 	python3 scripts/build_news_fulltext_stance_corpus.py --spec "$(NEWS_FULLTEXT_STANCE_SPEC)" --output "$(NEWS_FULLTEXT_STANCE_CORPUS)"
 
@@ -274,7 +280,7 @@ status:  ## Show what Ollama currently has loaded
 
 status-vllm:  ## Show vLLM service state + /v1/models response
 	@ansible $(ANSIBLE_ARGS) dgx -m ansible.builtin.shell \
-		-a "systemctl is-active vllm; systemctl is-active vllm-pna-proxy; curl -s http://localhost:8000/v1/models | head -c 200" \
+		-a "systemctl is-active vllm; systemctl is-active vllm-pna-proxy; curl -s http://localhost:{{ vllm_port | default(8000) }}/v1/models | head -c 200" \
 		--one-line
 
 status-vllm-ipv4:  ## Show vLLM state through the direct IPv4 fallback inventory

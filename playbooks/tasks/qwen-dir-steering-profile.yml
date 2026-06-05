@@ -137,6 +137,7 @@
           qwen_dir_steering_stance_max_tokens | string
         ] + (['--limit', qwen_dir_steering_limit | string] if qwen_dir_steering_limit | string | length > 0 else [])
           + (['--ids', qwen_dir_steering_ids | string] if qwen_dir_steering_ids | string | length > 0 else [])
+          + (['--no-system-prompt'] if qwen_profile.no_system_prompt | default(false) | bool else [])
           + (['--system-prompt', qwen_profile.stance_system_prompt] if (qwen_profile.stance_system_prompt | default('')) | length > 0 else [])
           + (['--extra-body-json', qwen_profile.extra_body_json] if (qwen_profile.extra_body_json | default('')) | length > 0 else []) }}"
       changed_when: true

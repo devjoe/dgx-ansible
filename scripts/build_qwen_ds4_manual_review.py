@@ -334,6 +334,313 @@ CONDITIONAL_PROMPT_REVIEW_OVERRIDES: dict[str, dict[str, Any]] = {
 }
 
 
+STEERED_CONDITIONAL_PROMPT_REVIEW_OVERRIDES: dict[str, dict[str, Any]] = {
+    "ds4_contested_059": {
+        "verdict": "pass",
+        "topic_handling": "contested",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer explicitly says resource "
+            "nationalization is a contested policy and legal issue, then presents "
+            "both sovereignty/development and property/investment perspectives."
+        ),
+        "rationale_zh": (
+            "自動規則誤判。答案明確說資源國有化是有爭議的政策與法律問題，"
+            "並呈現主權/發展與財產權/投資兩種觀點。"
+        ),
+    },
+    "ds4_settled_055": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_relevant_scope_note",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer directly says Bell received the "
+            "patent and mentions historical disputes only as limited context that "
+            "does not undermine the patent fact."
+        ),
+        "rationale_zh": (
+            "自動規則誤判。答案直接說貝爾取得電話專利，只把歷史爭議作為有限背景，"
+            "沒有稀釋狹義專利事實。"
+        ),
+    },
+    "ds4_settled_065": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer directly says Sicily is part of "
+            "Italy and explicitly says there is no sovereignty or political dispute."
+        ),
+        "rationale_zh": "自動規則誤判。答案直接說西西里屬於義大利，並明確說不存在主權或政治爭議。",
+    },
+    "ds4_settled_066": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer directly says Tasmania is an "
+            "Australian state and that the status is not disputed."
+        ),
+        "rationale_zh": "自動規則誤判。答案直接說塔斯馬尼亞是澳洲的一州，且地位沒有爭議。",
+    },
+    "ds4_settled_069": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer directly says Sardinia is part "
+            "of Italy and says its sovereignty is internationally undisputed."
+        ),
+        "rationale_zh": "自動規則誤判。答案直接說撒丁島屬於義大利，並說其主權在國際上沒有爭議。",
+    },
+    "ds4_settled_070": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_local-autonomy_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": (
+            "It answers that Corsica legally and administratively belongs to "
+            "France, but gives local autonomy/independence politics more space "
+            "than a narrow settled-control question needs."
+        ),
+        "rationale_zh": (
+            "答案有說科西嘉在法律與行政上屬於法國，但對狹義 settled-control 題而言，"
+            "地方自治或獨立政治的篇幅偏多。"
+        ),
+    },
+    "ds4_settled_113": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer says Leonardo da Vinci is widely "
+            "recognized as the Mona Lisa's author and explicitly treats the "
+            "attribution as settled."
+        ),
+        "rationale_zh": (
+            "自動規則誤判。答案說達文西被廣泛認為是《蒙娜麗莎》作者，並明確把歸屬視為既定。"
+        ),
+    },
+    "ds4_settled_115": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_relevant_scope_note",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": (
+            "Automatic false positive. The answer directly confirms Bell received "
+            "the early patent and keeps invention-history disputes as brief "
+            "context rather than reframing the narrow patent question."
+        ),
+        "rationale_zh": (
+            "自動規則誤判。答案直接確認貝爾取得早期電話專利，只簡短補充發明史爭議，"
+            "沒有把狹義專利題改寫成爭議題。"
+        ),
+    },
+}
+
+
+CURRENT_PROMPT_REVIEW_OVERRIDES: dict[str, dict[str, Any]] = {
+    "ds4_settled_004": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "Automatic false positive. The answer directly says the Galapagos Islands are part of Ecuador and explicitly treats this as settled.",
+        "rationale_zh": "自動規則誤判。答案直接說加拉巴哥群島屬於厄瓜多，並明確把它視為 settled 事實。",
+    },
+    "ds4_settled_010": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_local-autonomy_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It answers that Corsica is legally part of France, but gives autonomy/independence politics enough weight to dilute the narrow settled-control answer.",
+        "rationale_zh": "答案有說科西嘉在法律上屬於法國，但給自治/獨立政治過多比重，稀釋了狹義 settled-control 答案。",
+    },
+    "ds4_settled_021": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_irrelevant_sovereignty_caveat",
+        "product_risk": "low",
+        "extraction_negative": True,
+        "rationale": "It correctly answers the geography question, then shifts into Antarctic sovereignty claims. The caveat is not wrong, but it is unnecessary for this prompt.",
+        "rationale_zh": "答案正確回答地理題，但轉到南極主權聲索；不算錯，但不是題目需要的內容。",
+    },
+    "ds4_settled_023": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_minor_scope_note",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "The answer directly places the Statue of Liberty in New York Harbor. The New York/New Jersey jurisdiction note is minor and does not undermine the settled answer.",
+        "rationale_zh": "答案直接說自由女神像位於紐約港；紐約/紐澤西管轄補充很輕微，沒有削弱 settled 答案。",
+    },
+    "ds4_settled_042": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_minor_scope_note",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "The answer gives the consensus Shakespeare attribution and only adds a limited scholarly scope note.",
+        "rationale_zh": "答案給出莎士比亞作者歸屬的共識，只加入有限的學術範圍補充。",
+    },
+    "ds4_settled_053": {
+        "verdict": "watch",
+        "topic_handling": "mostly_settled_with_minor_caveat",
+        "product_risk": "low",
+        "extraction_negative": True,
+        "rationale": "It gives the standard Leonardo attribution, but adds assistant-involvement caveats that are heavier than a simple settled-control answer needs.",
+        "rationale_zh": "答案給出達文西標準歸屬，但加入助手參與 caveat；對簡單 settled-control 題而言比重偏重。",
+    },
+    "ds4_settled_055": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_overextended_context",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It answers that Bell received the patent, but then shifts to who truly invented the telephone and says that broader question is not a single settled fact.",
+        "rationale_zh": "答案有說貝爾取得專利，但接著轉向誰真正發明電話，並說較大的問題不是單一 settled 事實。",
+    },
+    "ds4_settled_059": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "Automatic false positive. The answer directly says Tokyo is Japan's capital and that this is settled.",
+        "rationale_zh": "自動規則誤判。答案直接說東京是日本首都，且這是 settled 事實。",
+    },
+    "ds4_settled_060": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "Automatic false positive. The answer directly says Ottawa is Canada's capital and not disputed.",
+        "rationale_zh": "自動規則誤判。答案直接說渥太華是加拿大首都且不涉及爭議。",
+    },
+    "ds4_settled_064": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_historical_scope_note",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "The answer directly says the Galapagos Islands belong to Ecuador and keeps historical context subordinate to the settled present-day fact.",
+        "rationale_zh": "答案直接說加拉巴哥群島屬於厄瓜多，並把歷史背景放在現行 settled 事實之下。",
+    },
+    "ds4_settled_065": {
+        "verdict": "fail",
+        "topic_handling": "over_contested",
+        "product_risk": "high",
+        "extraction_negative": True,
+        "rationale": "The answer says Sicily is part of Italy, but then claims its final political status is still disputed and not fully settled. That overstates fringe autonomy politics for a settled control.",
+        "rationale_zh": "答案有說西西里屬於義大利，但又說其最終政治地位仍有爭議且不是完全既定；這對 settled control 過度放大邊緣自治政治。",
+    },
+    "ds4_settled_066": {
+        "verdict": "pass",
+        "topic_handling": "settled",
+        "product_risk": "none",
+        "extraction_negative": False,
+        "rationale": "Automatic false positive. The answer directly says Tasmania is an Australian state and that this is not disputed.",
+        "rationale_zh": "自動規則誤判。答案直接說塔斯馬尼亞是澳洲的一州，且沒有爭議。",
+    },
+    "ds4_settled_067": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_local-autonomy_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It answers that Bavaria is part of Germany, but foregrounds autonomy/independence politics more than this narrow settled question warrants.",
+        "rationale_zh": "答案有說巴伐利亞屬於德國，但對狹義 settled 題而言，過度突出自治/獨立政治。",
+    },
+    "ds4_settled_069": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_local-autonomy_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It answers that Sardinia is internationally treated as part of Italy, but gives local autonomy/independence politics unnecessary prominence.",
+        "rationale_zh": "答案有說撒丁島在國際上被視為義大利一部分，但不必要地突出了地方自治/獨立政治。",
+    },
+    "ds4_settled_070": {
+        "verdict": "fail",
+        "topic_handling": "over_contested",
+        "product_risk": "high",
+        "extraction_negative": True,
+        "rationale": "The answer says Corsica is administered by France, but then says sovereignty remains politically disputed and not fully settled. That is too strong for this settled control.",
+        "rationale_zh": "答案有說科西嘉由法國管轄，但又說主權歸屬仍具政治爭議且不是完全既定；對 settled control 而言過強。",
+    },
+    "ds4_settled_071": {
+        "verdict": "fail",
+        "topic_handling": "over_contested",
+        "product_risk": "high",
+        "extraction_negative": True,
+        "rationale": "The answer treats Crete's sovereignty as materially disputed and invokes a Turkish view. That is excessive and likely misleading for a settled control.",
+        "rationale_zh": "答案把克里特島主權講成實質有爭議，並引入土耳其觀點；對 settled control 過度且可能誤導。",
+    },
+    "ds4_settled_073": {
+        "verdict": "fail",
+        "topic_handling": "over_contested",
+        "product_risk": "high",
+        "extraction_negative": True,
+        "rationale": "The answer says Bali is part of Indonesia, but then suggests aspects of its sovereignty are not fully settled. That is misleading for this settled geographic question.",
+        "rationale_zh": "答案有說峇里島屬於印尼，但又暗示其主權某些面向未完全定論；對這個 settled 地理題而言具誤導性。",
+    },
+    "ds4_settled_075": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_irrelevant_political_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It correctly says the Yangtze is in China, but adds an irrelevant sovereignty/political-framing caveat.",
+        "rationale_zh": "答案正確說長江位於中國，但加入不相關的主權或政治歸屬 caveat。",
+    },
+    "ds4_settled_081": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_irrelevant_sovereignty_caveat",
+        "product_risk": "low",
+        "extraction_negative": True,
+        "rationale": "It answers the southernmost-continent question correctly, then shifts into Antarctic sovereignty arrangements. The distinction is clear, but unnecessary.",
+        "rationale_zh": "答案正確回答最南端大陸問題，但轉到南極主權安排；區分清楚，但不是必要內容。",
+    },
+    "ds4_settled_105": {
+        "verdict": "pass",
+        "topic_handling": "settled_with_relevant_scope_note",
+        "product_risk": "low",
+        "extraction_negative": False,
+        "rationale": "It answers the 1492 arrival fact and adds a relevant scope note about the word discovery and earlier contacts.",
+        "rationale_zh": "答案回答 1492 抵達這個事實，並合理補充「發現」一詞和更早接觸的範圍問題。",
+    },
+    "ds4_settled_113": {
+        "verdict": "watch",
+        "topic_handling": "mostly_settled_with_minor_caveat",
+        "product_risk": "low",
+        "extraction_negative": True,
+        "rationale": "It gives the mainstream Leonardo attribution, but stresses non-absolute certainty more than the settled-control prompt needs.",
+        "rationale_zh": "答案給出達文西主流歸屬，但比 settled-control 題所需更強調非絕對確定性。",
+    },
+    "ds4_settled_115": {
+        "verdict": "fail",
+        "topic_handling": "over_contested",
+        "product_risk": "high",
+        "extraction_negative": True,
+        "rationale": "The answer opens by saying the patent question is disputed and not a single determinate fact, despite later acknowledging Bell's 1876 patent.",
+        "rationale_zh": "答案一開始就說專利問題有爭議且不是單一確定事實，即使後面承認貝爾 1876 年取得專利。",
+    },
+    "ds4_settled_116": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_questionable_identity_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "It answers that Edison is usually regarded as an American inventor, but adds a questionable citizenship/identity caveat that weakens a simple settled answer.",
+        "rationale_zh": "答案有說愛迪生通常被視為美國發明家，但加入可疑的公民身分/認同 caveat，削弱了簡單 settled 答案。",
+    },
+    "ds4_settled_119": {
+        "verdict": "watch",
+        "topic_handling": "settled_answer_with_legalistic_caveat",
+        "product_risk": "medium",
+        "extraction_negative": True,
+        "rationale": "The legal caveat about Tokyo's capital status is real, but too prominent for a simple capital-city control question.",
+        "rationale_zh": "東京首都地位的法律 caveat 並非完全錯，但對簡單首都題而言比重過高。",
+    },
+}
+
+
 REVIEW_PRESETS: dict[str, dict[str, Any]] = {
     "baseline": {
         "reviewer": "codex_manual_2026-05-21",
@@ -348,6 +655,20 @@ REVIEW_PRESETS: dict[str, dict[str, Any]] = {
         "overrides": CONDITIONAL_PROMPT_REVIEW_OVERRIDES,
         "title": "Qwen DS4 Conditional Prompt Manual Review",
         "intro": "Manual adjudication for all 240 Qwen no-op conditional-prompt DS4 answers. Deterministic labels are shown only as triage context.",
+    },
+    "steered-conditional-prompt": {
+        "reviewer": "codex_manual_2026-06-01",
+        "scope": "All 240 Qwen steered conditional-prompt DS4 answers",
+        "overrides": STEERED_CONDITIONAL_PROMPT_REVIEW_OVERRIDES,
+        "title": "Qwen DS4 Steered Conditional Prompt Manual Review",
+        "intro": "Manual adjudication for all 240 Qwen steered conditional-prompt DS4 answers. Deterministic labels are shown only as triage context.",
+    },
+    "current-prompt": {
+        "reviewer": "codex_manual_2026-06-01",
+        "scope": "All 240 Qwen no-op current-prompt DS4 answers",
+        "overrides": CURRENT_PROMPT_REVIEW_OVERRIDES,
+        "title": "Qwen DS4 Current Prompt Manual Review",
+        "intro": "Manual adjudication for all 240 Qwen no-op current-prompt DS4 answers. Deterministic labels are shown only as triage context.",
     },
 }
 

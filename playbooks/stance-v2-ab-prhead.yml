@@ -20,6 +20,7 @@
     stance_v2_ab_timeout: 240
     stance_v2_ab_max_tokens: 900
     stance_v2_ab_prepass_max_tokens: 1200
+    stance_v2_ab_no_system_prompt: false
 
     gemma4_mtp_container_name: "gemma4-mtp-stance-v2-ab"
     gemma4_mtp_image: "vllm/vllm-openai:gemma4-0505-cu130"
@@ -34,6 +35,7 @@
     gemma4_mtp_max_model_len: 262144
     gemma4_mtp_max_num_seqs: 4
     gemma4_mtp_max_num_batched_tokens: 16384
+    gemma4_mtp_limit_mm_per_prompt: '{"image":4}'
     gemma4_mtp_patch_url: ""
     gemma4_mtp_patch_host_path: ""
     gemma4_mtp_readiness_retries: 72
@@ -104,10 +106,12 @@
           'gemma_served_name': gemma4_mtp_served_name,
           'gemma_image': gemma4_mtp_image,
           'gemma_num_speculative_tokens': gemma4_mtp_num_speculative_tokens,
+          'gemma_limit_mm_per_prompt': gemma4_mtp_limit_mm_per_prompt,
           'gemma_patch_url': gemma4_mtp_patch_url,
           'gemma_patch_host_path': gemma4_mtp_patch_host_path,
           'stance_ids': stance_v2_ab_ids,
-          'stance_limit': stance_v2_ab_limit
+          'stance_limit': stance_v2_ab_limit,
+          'no_system_prompt': stance_v2_ab_no_system_prompt
         } | to_nice_json }}"
 
     - name: Confirm Qwen vLLM is answering before baseline
@@ -132,6 +136,7 @@
           --timeout {{ stance_v2_ab_timeout | string | quote }}
           --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
           --prepass-max-tokens {{ stance_v2_ab_prepass_max_tokens | string | quote }}
+          {% if stance_v2_ab_no_system_prompt | bool %}--no-system-prompt{% endif %}
           {% if stance_v2_ab_limit | string | length > 0 %}--limit {{ stance_v2_ab_limit | string | quote }}{% endif %}
           {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
       changed_when: true
@@ -180,6 +185,9 @@
               --trust-remote-code \
               --enable-chunked-prefill \
               --enable-prefix-caching \
+              {% if gemma4_mtp_limit_mm_per_prompt | length > 0 -%}
+              --limit-mm-per-prompt '{{ gemma4_mtp_limit_mm_per_prompt }}' \
+              {% endif -%}
               --speculative-config '{{ gemma4_mtp_speculative_config }}'
           args:
             executable: /bin/bash
@@ -224,6 +232,7 @@
               --timeout {{ stance_v2_ab_timeout | string | quote }}
               --max-tokens {{ stance_v2_ab_max_tokens | string | quote }}
               --prepass-max-tokens {{ stance_v2_ab_prepass_max_tokens | string | quote }}
+              {% if stance_v2_ab_no_system_prompt | bool %}--no-system-prompt{% endif %}
               {% if stance_v2_ab_limit | string | length > 0 %}--limit {{ stance_v2_ab_limit | string | quote }}{% endif %}
               {% if stance_v2_ab_ids | length > 0 %}--ids {{ stance_v2_ab_ids | quote }}{% endif %}
           changed_when: true

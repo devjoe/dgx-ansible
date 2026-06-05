@@ -39,6 +39,13 @@
         extra_body_json: ""
         run_decode: true
         run_ds4: true
+      - id: noop-dflash-no-system
+        description: "Control profile: same Qwen DFlash launch path, no activation hook, no system prompt"
+        extra_args: ""
+        extra_body_json: ""
+        no_system_prompt: true
+        run_decode: false
+        run_ds4: true
       - id: steer-l32-35-s005-ablate
         description: "Experiment hook: signed-projection ablation on layers 32-35 with extracted DS4 directions"
         launcher_prefix: "{{ vllm_workdir }}/.venv/bin/python {{ qwen_dir_steering_launcher }}"
