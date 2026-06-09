@@ -201,6 +201,14 @@ def expected_values(row: dict[str, Any], expected_key: str) -> set[Any]:
 
 
 def extract_message_text(payload: dict[str, Any]) -> str:
+    message = payload.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        reasoning = message.get("thinking") or message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            return reasoning
     choices = payload.get("choices") or []
     if not choices:
         return ""
@@ -215,6 +223,8 @@ def extract_message_text(payload: dict[str, Any]) -> str:
 
 
 def completion_tokens(payload: dict[str, Any]) -> int | None:
+    if isinstance(payload.get("eval_count"), int):
+        return payload["eval_count"]
     usage = payload.get("usage")
     if isinstance(usage, dict) and isinstance(usage.get("completion_tokens"), int):
         return usage["completion_tokens"]
@@ -232,25 +242,39 @@ def post_chat_completion(
     json_object: bool = False,
     extra_body: dict[str, Any] | None = None,
     no_system_prompt: bool = False,
+    ollama_native: bool = False,
 ) -> tuple[int | None, dict[str, Any] | None, str | None, float]:
     messages = []
     if not no_system_prompt:
         messages.append({"role": "system", "content": system_prompt + "\n/no_think"})
     messages.append({"role": "user", "content": prompt + user_suffix})
-    body = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0,
-        "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False, "preserve_thinking": False},
-    }
+    if ollama_native:
+        body = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": 0,
+                "num_predict": max_tokens,
+            },
+        }
+    else:
+        body = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "chat_template_kwargs": {"enable_thinking": False, "preserve_thinking": False},
+        }
     if extra_body:
         body.update(extra_body)
-    if json_object:
+    if json_object and not ollama_native:
         body["response_format"] = {"type": "json_object"}
     data = json.dumps(body).encode("utf-8")
+    path = "/api/chat" if ollama_native else "/v1/chat/completions"
     request = urllib.request.Request(
-        f"{base_url.rstrip('/')}/v1/chat/completions",
+        f"{base_url.rstrip('/')}{path}",
         data=data,
         method="POST",
         headers={"Content-Type": "application/json"},
@@ -444,6 +468,11 @@ def main() -> int:
         help="Do not send a system message for the reader-facing target answer.",
     )
     parser.add_argument(
+        "--ollama-native",
+        action="store_true",
+        help="Use Ollama's native /api/chat transport instead of OpenAI-compatible /v1.",
+    )
+    parser.add_argument(
         "--extra-body-json",
         default="",
         help="JSON object merged into each OpenAI-compatible request body.",
@@ -492,6 +521,7 @@ def main() -> int:
                 PREPASS_SUFFIX,
                 True,
                 extra_body,
+                ollama_native=args.ollama_native,
             )
             prepass_answer = extract_message_text(prepass_payload or {})
 
@@ -504,6 +534,7 @@ def main() -> int:
             args.system_prompt,
             extra_body=extra_body,
             no_system_prompt=args.no_system_prompt,
+            ollama_native=args.ollama_native,
         )
         answer = extract_message_text(payload or {})
         result = {
@@ -555,6 +586,7 @@ def main() -> int:
             "extra_body": extra_body,
             "system_prompt": None if args.no_system_prompt else args.system_prompt,
             "no_system_prompt": args.no_system_prompt,
+            "transport": "ollama_native" if args.ollama_native else "openai_compatible",
         },
         "summary": summarize(results),
         "results": results,
