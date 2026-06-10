@@ -72,3 +72,53 @@ Revive the Qwen3.6 PrismaQuant / DFlash branch first:
 Promotion should require a clear win over the current greedy baseline around
 80 tok/s single-request decode without schema, stance, or image-regression
 breakage.
+
+## PrismaQuant Revival Result
+
+The revival smoke and short speed checks completed after the DGX software
+update. The reusable runner is:
+
+```bash
+scripts/run_prismaquant_smoke.sh <base|dflash> <spec_tokens> [smoke|bench]
+```
+
+It stops the production `vllm` and `vllm-pna-proxy` services, launches an
+isolated PrismaQuant server on `127.0.0.1:8011`, runs a `/v1/models` and
+completion smoke, optionally runs `vllm bench serve`, and restores production
+services in `trap` cleanup.
+
+Remote artifacts:
+
+```text
+/home/devjoe/Projects/Ollama/benchmarks/prismaquant-revival-20260611/
+```
+
+Load findings:
+
+- `vllm 0.20.2` can load
+  `/home/devjoe/Projects/Ollama/models/qwen3.6-35b-prismaquant`.
+- The model config is now recognized as `quantization=compressed-tensors`.
+- vLLM uses NVFP4 / MXFP8 kernels instead of failing at startup.
+- `VLLM_USE_V1=0` is no longer a valid override in this vLLM build; the log says
+  `Unknown vLLM environment variable detected: VLLM_USE_V1`, and the engine
+  initializes as V1.
+- Initial profiling is expensive: base load had about 250 s warmup/profiling on
+  the first successful run. Subsequent runs still spent roughly 97-118 s in
+  engine init for these short 4K profiles.
+
+Speed result, same 2K input / 256 output / greedy / concurrency 1 shape as the
+post-update Qwen baseline:
+
+| Candidate | Output tok/s | Median TTFT | Acceptance | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Current AutoRound + DFlash k=8 | 79.79 | 376 ms | 26.99% | Production baseline |
+| PrismaQuant base | 44.92 | 362 ms | n/a | Loads, but too slow without DFlash |
+| PrismaQuant + DFlash k=6 | 59.69 | 370 ms | 26.19% | DFlash helps, but still below production |
+| PrismaQuant + DFlash k=8 | 74.05 | 368 ms | 30.61% | Best measured PrismaQuant profile, still below production |
+
+Decision: PrismaQuant / DFlash is revived as a runnable experiment path, but it
+is not a promotion candidate yet. It closes most of the gap at k=8, but still
+does not beat the current AutoRound + DFlash production baseline and carries a
+large initialization/profiling cost. Do not spend another long sweep on k=12
+until there is a new serving-side reason to expect better acceptance or faster
+compressed-tensors kernels.
