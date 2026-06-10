@@ -8,6 +8,8 @@ model-evaluation work. Raw benchmark and evaluation outputs are generated under
 
 - `dgx-spark-software-update-guidance-2026-05-11.md`: DGX Spark software update
   guidance and operational cautions.
+- `qwen36-benchmark-and-candidate-survey-2026-06-11.md`: post-update Qwen3.6
+  speed baseline, alternative model survey, and next PrismaQuant/DFlash plan.
 - `dgx-spark-vllm-model-selection-2026-05-06.md`: vLLM model-selection notes for
   DGX Spark.
 - `acceleration-research-2026-05-05.md`: acceleration and serving research notes.

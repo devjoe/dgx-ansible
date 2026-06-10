@@ -27,7 +27,7 @@ Stop after #1 unless the task needs more:
 For Mac-side config, model-choice rationale, or cross-endpoint benchmarks, go
 to `~/Projects/local-inference/README.md`.
 
-## Current state (2026-05-06)
+## Current state (2026-06-11)
 
 | | Tier A (Ollama) | Tier B (vLLM) |
 |---|---|---|
@@ -38,6 +38,13 @@ to `~/Projects/local-inference/README.md`.
 | Image handling | n/a | client-side prefetch in fb-reader → `data:image/jpeg;base64,...` |
 | Speed flags | `FLASH_ATTENTION=0`, `KV_CACHE_TYPE=fp16` | Marlin atomic add, `gpu-memory-utilization=0.85` |
 | Keep-alive | `OLLAMA_KEEP_ALIVE=24h` | n/a (vLLM holds the model in VRAM permanently) |
+
+Post-update Qwen3.6 speed baseline: greedy 2K / 256-token / concurrency-1 vLLM
+benchmark is `79.79 tok/s`; greedy 8K / 256-token / concurrency-1 is
+`76.22 tok/s`; greedy 2K / concurrency-4 aggregate is `187.35 tok/s`. Artifacts
+are under `/home/devjoe/Projects/Ollama/benchmarks/qwen36-speed-20260611/` on
+the DGX. See
+`docs/qwen36-benchmark-and-candidate-survey-2026-06-11.md`.
 
 The image-sanitizing proxy (`vllm-sanitizer`) was **removed 2026-04** in commit
 `ed898fd`. fb-reader now fetches + JPEG-re-encodes images client-side against
@@ -76,9 +83,12 @@ any-error triggers). v2 sequencing is in
 
 ### Tracking
 
-- **PrismaQuant + DFlash investigation paused** — see `docs/handover-prismaquant.md`.
-  Resume only when there's a clean V0-engine flag set for `compressed-tensors`
-  on Blackwell.
+- **PrismaQuant + DFlash investigation resumed** — see
+  `docs/handover-prismaquant.md` and
+  `docs/qwen36-benchmark-and-candidate-survey-2026-06-11.md`. The next step is
+  to retest whether the post-update vLLM stack can load the PrismaQuant model
+  through a V0-compatible `compressed-tensors` path, then run a small DFlash
+  draft-length sweep.
 - **Bench model drift**: `bench_model: qwen3.5:latest` in `group_vars/dgx.yml`,
   but the deployed primary is `qwen3.6:35b-a3b`. Decide whether benchmark
   should track the deployed model or stay on qwen3.5 as a stable A/B baseline.
