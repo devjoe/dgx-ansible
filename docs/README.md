@@ -12,6 +12,8 @@ model-evaluation work. Raw benchmark and evaluation outputs are generated under
   speed baseline, alternative model survey, and next PrismaQuant/DFlash plan.
 - `gemma4-12b-replacement-survey-2026-06-11.md`: Gemma 4 12B replacement survey,
   vLLM unified image check, and DGX Spark smoke/bench result.
+- `diffusiongemma-dgx-spark-smoke-2026-06-11.md`: DiffusionGemma runtime support
+  check, DGX Spark NVFP4 smoke, and speed/TTFT decision note.
 - `dgx-spark-vllm-model-selection-2026-05-06.md`: vLLM model-selection notes for
   DGX Spark.
 - `acceleration-research-2026-05-05.md`: acceleration and serving research notes.
