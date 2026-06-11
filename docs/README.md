@@ -10,6 +10,8 @@ model-evaluation work. Raw benchmark and evaluation outputs are generated under
   guidance and operational cautions.
 - `qwen36-benchmark-and-candidate-survey-2026-06-11.md`: post-update Qwen3.6
   speed baseline, alternative model survey, and next PrismaQuant/DFlash plan.
+- `gemma4-12b-replacement-survey-2026-06-11.md`: Gemma 4 12B replacement survey,
+  vLLM unified image check, and DGX Spark smoke/bench result.
 - `dgx-spark-vllm-model-selection-2026-05-06.md`: vLLM model-selection notes for
   DGX Spark.
 - `acceleration-research-2026-05-05.md`: acceleration and serving research notes.

@@ -89,6 +89,12 @@ any-error triggers). v2 sequencing is in
   to retest whether the post-update vLLM stack can load the PrismaQuant model
   through a V0-compatible `compressed-tensors` path, then run a small DFlash
   draft-length sweep.
+- **Gemma 4 12B replacement check** — see
+  `docs/gemma4-12b-replacement-survey-2026-06-11.md`. The fastest tested
+  12B NVFP4A16 candidate runs on DGX Spark but reaches only `22.11 tok/s` on the
+  2K/256/c1 shape, far below the current Qwen3.6 + DFlash `79.79 tok/s`
+  baseline. Do not switch production to Gemma 4 12B without a new faster or
+  TC-safer serving recipe.
 - **Bench model drift**: `bench_model: qwen3.5:latest` in `group_vars/dgx.yml`,
   but the deployed primary is `qwen3.6:35b-a3b`. Decide whether benchmark
   should track the deployed model or stay on qwen3.5 as a stable A/B baseline.
