@@ -53,6 +53,14 @@ the user's authenticated FB session. vLLM itself is bound to localhost, and
 answering Chrome Extension Private Network Access preflights with
 `Access-Control-Allow-Private-Network: true`.
 
+vLLM auth is intentionally off as of 2026-06-18. The short-lived
+`VLLM_API_KEY=truly-smoke-key` test proved that the mechanism works, then the
+live unit was redeployed without `VLLM_API_KEY`. Verification used
+`GET /v1/models` with no `Authorization` and with an invalid bearer token; both
+returned `200`, while the PNA preflight still returned
+`Access-Control-Allow-Headers: content-type` and
+`Access-Control-Allow-Private-Network: true`.
+
 ## Open work / next steps
 
 ### Observability (v1 shipped 2026-05-04 — collecting baseline)
